@@ -10,7 +10,7 @@ class Content:
         self.image = image
         self.cost = cost
         self.timeout = timeout
-        self.creation = datetime.now()
+        self.creation = datetime.datetime.now()
         self.income = income
 
 
@@ -22,6 +22,8 @@ def load_images():
         image_dict["reactor_slot_background"] = reactor_slot_background
         uranium_rod = pygame.image.load('uranium_rod.png')
         image_dict["uranium_rod"] = uranium_rod
+        shop_logo = pygame.image.load('shop.png')
+        image_dict['shop_logo'] = shop_logo
     except pygame.error:
         print("Failed to load images")
 
@@ -154,6 +156,8 @@ class Shop:
             if item.active:
                 return item.content
         return None
+    
+shop_logo_rect = pygame.Rect(50, 0, 50, 100)
 
 
 # --- Main Loop ---
@@ -209,6 +213,7 @@ while running:
     screen.fill((30, 30, 30))
     grid.draw(screen)
     shop.draw(screen)
+    screen.blit(image_dict["shop_logo"], shop_logo_rect)
 
     # Render money counter
     money_surf = money_font.render(f"Money: {money}", True, (255, 255, 0))

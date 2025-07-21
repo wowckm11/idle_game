@@ -41,7 +41,7 @@ def load_images():
 # --- Box and Grid Classes ---
 class Box:
     """
-    A single box cell in a grid.
+    A single box cell in a grid, with expiration progress bar.
     """
     def __init__(self, row: int, col: int, size: int, origin: tuple = (0, 0), multipliers: dict = None):
         self.row = row
@@ -55,10 +55,25 @@ class Box:
         self.multipliers = multipliers or {}
 
     def draw(self, surface: pygame.Surface):
+        # Draw background
         surface.blit(image_dict.get("reactor_slot_background"), self.rect)
         if self.content:
+            # Draw content image
             content_rect = self.content.image.get_rect(center=self.rect.center)
             surface.blit(self.content.image, content_rect)
+            # Draw timeout progress bar
+            now = datetime.datetime.now()
+            elapsed = (now - self.content.creation).total_seconds()
+            remaining = max(0, self.content.timeout - elapsed)
+            ratio = remaining / self.content.timeout if self.content.timeout > 0 else 0
+            bar_width = int(self.size * ratio)
+            bar_height = 5
+            bar_x = self.rect.x
+            bar_y = self.rect.y + self.size - bar_height - 2
+            # Bar background
+            pygame.draw.rect(surface, (100, 100, 100), (self.rect.x, bar_y, self.size, bar_height))
+            # Bar fill
+            pygame.draw.rect(surface, (50, 200, 50), (bar_x, bar_y, bar_width, bar_height))
 
     def is_hovered(self, mouse_pos: tuple) -> bool:
         return self.rect.collidepoint(mouse_pos)
@@ -94,10 +109,6 @@ class Grid:
                 box.draw(surface)
 
     def place_content(self, mouse_pos: tuple, content: Content) -> bool:
-        """
-        Place the given content into the clicked box, if empty.
-        Returns True if placed.
-        """
         for row in self.cells:
             for box in row:
                 if box.is_hovered(mouse_pos) and box.place(content):
@@ -162,6 +173,7 @@ class Shop:
                 return item.content
         return None
 
+# Shop logo rect
 shop_logo_rect = pygame.Rect(50, 0, 50, 100)
 
 # --- Main Loop ---
@@ -178,13 +190,13 @@ money = 500
 
 # Set up income and expiration timer (every 1 second)
 INCOME_EVENT = pygame.USEREVENT + 1
-pygame.time.set_timer(INCOME_EVENT, 1000)
+pygame.time.set_timer(INCOME_EVENT, 100)
 
 # Create grid and shop
 grid = Grid(rows=10, cols=10, box_size=50, origin=(200, 50))
 contents = [
-    Content("Power", image_dict["uranium_rod"], cost=10, timeout=15, income=1),
-    Content("Speed", pygame.Surface((32,32)).convert(), cost=20, timeout=20, income=2)
+    Content("Power", image_dict["uranium_rod"], cost=10, timeout=15, income=0.1),
+    Content("Speed", pygame.Surface((32,32)).convert(), cost=20, timeout=20, income=0.2)
 ]
 contents[1].image.fill((0,200,255))
 shop = Shop(origin=(20, 50), box_size=50, contents=contents)
@@ -200,15 +212,12 @@ while running:
             for row in grid.cells:
                 for box in row:
                     if box.content:
-                        # Add income
                         money += box.content.income
-                        # Check expiration
                         elapsed = (now - box.content.creation).total_seconds()
                         if elapsed >= box.content.timeout:
                             box.remove()
         elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
-            pos=event.pos
-            # Toggle shop or place in grid
+            pos = event.pos
             active = shop.get_active_content()
             if active and money >= active.cost:
                 placed = grid.place_content(pos, active)
@@ -221,7 +230,7 @@ while running:
     screen.fill((30, 30, 30))
     grid.draw(screen)
     shop.draw(screen)
-    screen.blit(image_dict["shop_logo"], shop_logo_rect)
+    screen.blit(image_dict['shop_logo'], shop_logo_rect)
     # Money counter
     money_surf = money_font.render(f"Money: {money}", True, (255, 255, 0))
     screen.blit(money_surf, (20, 550))

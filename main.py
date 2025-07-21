@@ -90,28 +90,27 @@ class Grid:
                         return True
         return False
 
-# Example usage:
-#
-# pygame.init()
-# screen = pygame.display.set_mode((800, 600))
-# grid = Grid(rows=10, cols=10, box_size=50)
-#
-# def create_dummy_sprite():
-#     sprite = pygame.sprite.Sprite()
-#     sprite.image = pygame.Surface((40, 40))
-#     sprite.image.fill((0, 255, 0))
-#     return sprite
-#
-# running = True
-# while running:
-#     for event in pygame.event.get():
-#         if event.type == pygame.QUIT:
-#             running = False
-#         elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
-#             grid.handle_click(event.pos, create_dummy_sprite)
-#
-#     screen.fill((30, 30, 30))
-#     grid.draw(screen)
-#     pygame.display.flip()
-#
-# pygame.quit()
+
+pygame.init()
+screen = pygame.display.set_mode((800, 600))
+grid = Grid(rows=10, cols=10, box_size=50)
+
+def create_dummy_sprite():
+    sprite = pygame.sprite.Sprite()
+    sprite.image = pygame.Surface((40, 40))
+    sprite.image.fill((0, 255, 0))
+    return sprite
+
+running = True
+while running:
+    for event in pygame.event.get():
+        if event.type == pygame.QUIT:
+            running = False
+        elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+            grid.handle_click(event.pos, create_dummy_sprite)
+
+    screen.fill((30, 30, 30))
+    grid.draw(screen)
+    pygame.display.flip()
+
+pygame.quit()

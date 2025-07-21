@@ -34,7 +34,7 @@ def load_images():
     try:
         image_dict["reactor_slot_background"] = pygame.image.load('reactor_slot_background.png')
         image_dict["uranium_rod"] = pygame.image.load('uranium_rod.png')
-        image_dict['shop_logo'] = pygame.image.load('shop.png')
+        image_dict['shop_logo'] = pygame.image.load('shop_logo.png')
         image_dict['yellow_rod'] = pygame.image.load('yellow_rod.png')
     except pygame.error:
         print("Failed to load images")
@@ -212,7 +212,7 @@ grid = Grid(rows=10, cols=10, box_size=50, origin=(200, 50))
 
 contents = [
     Content("uranium_rod", image_dict["uranium_rod"], cost=10, timeout=15, income=0.1),
-    Content("yellow_rod", image_dict["yellow_rod"], cost=20, timeout=20, income=0.2)
+    Content("yellow_rod", image_dict["yellow_rod"], cost=20, timeout=20, income=0.2)]
 
 shop = Shop(origin=(20, 60), box_size=50, contents=contents)
 

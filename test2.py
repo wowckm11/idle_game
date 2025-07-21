@@ -49,6 +49,14 @@ def load_images():
         except pygame.error:
             print(f"Failed to load {path}")
 
+def load_shop_contents():
+    contents=[]
+    with open('shop_objects.csv', newline='') as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            contents.append(Content(row['name'], image_dict.get(row['image']), int(row['cost']),int(row['timeout']), float(row['income'])))
+    return contents
+
 # --- Box and Grid Classes ---
 class Box:
     """
@@ -212,12 +220,13 @@ pygame.time.set_timer(INCOME_EVENT, 100)
 
 # Instantiate
 grid = Grid(rows=10, cols=10, box_size=50, origin=(200, 50))
-contents = [
+
+contents = load_shop_contents()
+[
     Content("Power", image_dict.get("uranium_rod"), cost=10, timeout=15, income=0.1),
     Content("yellow_rod", image_dict.get("yellow_rod"), cost=20, timeout=20, income=0.2),
-    Content("extra1", image_dict.get("yellow_rod"), cost=30, timeout=25, income=0.3),
-    Content("extra2", image_dict.get("yellow_rod"), cost=40, timeout=30, income=0.4),
-    Content("extra3", image_dict.get("yellow_rod"), cost=50, timeout=35, income=0.5)
+    Content("extra1", image_dict.get("red_rod"), cost=30, timeout=25, income=0.3),
+    Content("extra2", image_dict.get("blue_rod"), cost=40, timeout=30, income=0.4)
 ]
 shop = Shop(origin=(20, 60), box_size=50, contents=contents, spacing=10, items_per_row=3)
 

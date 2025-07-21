@@ -1,5 +1,6 @@
 import pygame
 import datetime
+import csv 
 
 # --- Content Class ---
 class Content:
@@ -208,10 +209,10 @@ pygame.time.set_timer(INCOME_EVENT, 100)
 
 # Create grid and shop
 grid = Grid(rows=10, cols=10, box_size=50, origin=(200, 50))
+
 contents = [
-    Content("Power", image_dict["uranium_rod"], cost=10, timeout=15, income=0.1),
-    Content("Speed", image_dict["yellow_rod"], cost=20, timeout=20, income=0.2)
-]
+    Content("uranium_rod", image_dict["uranium_rod"], cost=10, timeout=15, income=0.1),
+    Content("yellow_rod", image_dict["yellow_rod"], cost=20, timeout=20, income=0.2)
 
 shop = Shop(origin=(20, 60), box_size=50, contents=contents)
 

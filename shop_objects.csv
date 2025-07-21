@@ -1,0 +1,3 @@
+name,image,cost,timeout,income
+uranium_rod,uranium_rod.png,10,15,0.1
+yellow_rod,yellow_rod.png,20,20,0.2

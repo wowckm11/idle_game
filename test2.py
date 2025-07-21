@@ -33,6 +33,8 @@ def load_images():
     try:
         image_dict["reactor_slot_background"] = pygame.image.load('reactor_slot_background.png')
         image_dict["uranium_rod"] = pygame.image.load('uranium_rod.png')
+        shop_logo = pygame.image.load('shop.png')
+        image_dict['shop_logo'] = shop_logo
     except pygame.error:
         print("Failed to load images")
 
@@ -160,6 +162,8 @@ class Shop:
                 return item.content
         return None
 
+shop_logo_rect = pygame.Rect(50, 0, 50, 100)
+
 # --- Main Loop ---
 pygame.init()
 load_images()
@@ -217,7 +221,7 @@ while running:
     screen.fill((30, 30, 30))
     grid.draw(screen)
     shop.draw(screen)
-
+    screen.blit(image_dict["shop_logo"], shop_logo_rect)
     # Money counter
     money_surf = money_font.render(f"Money: {money}", True, (255, 255, 0))
     screen.blit(money_surf, (20, 550))

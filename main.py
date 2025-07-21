@@ -1,5 +1,6 @@
 import pygame
 import datetime
+
 # --- Content Class ---
 class Content:
     """
@@ -9,24 +10,33 @@ class Content:
         self.name = name
         self.image = image
         self.cost = cost
-        self.timeout = timeout
+        self.timeout = timeout  # seconds
         self.creation = datetime.datetime.now()
         self.income = income
+
+    def clone(self):
+        """
+        Create a fresh copy of this content with a new creation timestamp.
+        """
+        return Content(
+            name=self.name,
+            image=self.image,
+            cost=self.cost,
+            timeout=self.timeout,
+            income=self.income
+        )
 
 
 def load_images():
     global image_dict
     image_dict = {}
     try:
-        reactor_slot_background = pygame.image.load('reactor_slot_background.png')
-        image_dict["reactor_slot_background"] = reactor_slot_background
-        uranium_rod = pygame.image.load('uranium_rod.png')
-        image_dict["uranium_rod"] = uranium_rod
+        image_dict["reactor_slot_background"] = pygame.image.load('reactor_slot_background.png')
+        image_dict["uranium_rod"] = pygame.image.load('uranium_rod.png')
         shop_logo = pygame.image.load('shop.png')
         image_dict['shop_logo'] = shop_logo
     except pygame.error:
         print("Failed to load images")
-
 
 # --- Box and Grid Classes ---
 class Box:
@@ -54,16 +64,18 @@ class Box:
         return self.rect.collidepoint(mouse_pos)
 
     def place(self, content: Content) -> bool:
+        """
+        Place a cloned copy of the given content into this box if empty.
+        """
         if not self.occupied:
             self.occupied = True
-            self.content = content
+            self.content = content.clone()
             return True
         return False
 
     def remove(self):
         self.occupied = False
         self.content = None
-
 
 class Grid:
     """
@@ -92,7 +104,6 @@ class Grid:
                     return True
         return False
 
-
 # --- Shop Classes ---
 class ShopBox:
     """
@@ -120,11 +131,9 @@ class ShopBox:
         self.active = active
         self.outline_color = (50, 200, 50) if self.active else (200, 200, 200)
 
-
 class Shop:
     """
     A horizontal row of ShopBox items where only one can be active at a time.
-    Click only activates if player has enough money.
     """
     def __init__(self, origin: tuple, box_size: int, contents: list, spacing: int = 10):
         self.items = []
@@ -138,10 +147,6 @@ class Shop:
             item.draw(surface)
 
     def handle_click(self, mouse_pos: tuple, money: int) -> bool:
-        """
-        Activate the clicked shop box if affordable, deactivate others.
-        Returns True if a click was on any box.
-        """
         clicked = False
         for item in self.items:
             if item.is_hovered(mouse_pos) and money >= item.content.cost:
@@ -156,9 +161,8 @@ class Shop:
             if item.active:
                 return item.content
         return None
-    
-shop_logo_rect = pygame.Rect(50, 0, 50, 100)
 
+shop_logo_rect = pygame.Rect(50, 0, 50, 100)
 
 # --- Main Loop ---
 pygame.init()
@@ -172,32 +176,36 @@ money_font = pygame.font.Font(None, 36)
 # Initialize money
 money = 500
 
-# Set up income timer (every 1 second)
+# Set up income and expiration timer (every 1 second)
 INCOME_EVENT = pygame.USEREVENT + 1
 pygame.time.set_timer(INCOME_EVENT, 1000)
 
-# Create grid aligned right
+# Create grid and shop
 grid = Grid(rows=10, cols=10, box_size=50, origin=(200, 50))
-# Create shop aligned left
 contents = [
-    Content("Power", image_dict["uranium_rod"], cost=100, timeout=15, income=1),
-    Content("Speed", pygame.Surface((32,32)).convert(), cost=200, timeout=20, income=2)
+    Content("Power", image_dict["uranium_rod"], cost=10, timeout=15, income=1),
+    Content("Speed", pygame.Surface((32,32)).convert(), cost=20, timeout=20, income=2)
 ]
 contents[1].image.fill((0,200,255))
 shop = Shop(origin=(20, 50), box_size=50, contents=contents)
 
 running = True
 while running:
+    now = datetime.datetime.now()
     for event in pygame.event.get():
-        
         if event.type == pygame.QUIT:
             running = False
         elif event.type == INCOME_EVENT:
-            # Sum income from all placed content
+            # Income generation and expiration check
             for row in grid.cells:
                 for box in row:
                     if box.content:
+                        # Add income
                         money += box.content.income
+                        # Check expiration
+                        elapsed = (now - box.content.creation).total_seconds()
+                        if elapsed >= box.content.timeout:
+                            box.remove()
         elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
             pos=event.pos
             # Toggle shop or place in grid
@@ -209,16 +217,14 @@ while running:
             if not shop.handle_click(pos, money):
                 pass
 
-    # Draw everything
+    # Draw
     screen.fill((30, 30, 30))
     grid.draw(screen)
     shop.draw(screen)
     screen.blit(image_dict["shop_logo"], shop_logo_rect)
-
-    # Render money counter
+    # Money counter
     money_surf = money_font.render(f"Money: {money}", True, (255, 255, 0))
     screen.blit(money_surf, (20, 550))
-
     pygame.display.flip()
 
 pygame.quit()

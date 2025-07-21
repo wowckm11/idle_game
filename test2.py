@@ -240,10 +240,10 @@ money_font=pygame.font.Font(None,28)
 money=500.0
 # timers
 INCOME=pygame.USEREVENT+1
-pygame.time.set_timer(INCOME,1000)
+pygame.time.set_timer(INCOME,100)
 # load items and panels
 all_items=load_shop_contents()
-cats=['shop_logo','infrastructure_logo','upgrade_logo']
+cats=['shop_logo','systems_logo','upgrade_logo']
 panels={cat:Panel((20,100),50,[i for i in all_items if i.category==cat]) for cat in cats}
 tabbar=TabBar(cats,(20,20),font)
 grid=Grid(10,10,50,(450,50))

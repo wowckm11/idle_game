@@ -6,7 +6,7 @@ class Content:
     """
     Represents an item or upgrade available in the shop.
     """
-    def __init__(self, name: str, image: pygame.Surface, cost: int, timeout: int, income: int):
+    def __init__(self, name: str, image: pygame.Surface, cost: int, timeout: int, income: float):
         self.name = name
         self.image = image
         self.cost = cost
@@ -33,8 +33,7 @@ def load_images():
     try:
         image_dict["reactor_slot_background"] = pygame.image.load('reactor_slot_background.png')
         image_dict["uranium_rod"] = pygame.image.load('uranium_rod.png')
-        shop_logo = pygame.image.load('shop.png')
-        image_dict['shop_logo'] = shop_logo
+        image_dict['shop_logo'] = pygame.image.load('shop.png')
     except pygame.error:
         print("Failed to load images")
 
@@ -43,7 +42,7 @@ class Box:
     """
     A single box cell in a grid, with expiration progress bar.
     """
-    def __init__(self, row: int, col: int, size: int, origin: tuple = (0, 0), multipliers: dict = None):
+    def __init__(self, row: int, col: int, size: int, origin: tuple = (0, 0)):
         self.row = row
         self.col = col
         self.size = size
@@ -52,16 +51,15 @@ class Box:
         self.rect = pygame.Rect(x, y, size, size)
         self.occupied = False
         self.content = None
-        self.multipliers = multipliers or {}
 
     def draw(self, surface: pygame.Surface):
-        # Draw background
+            # Draw background
         surface.blit(image_dict.get("reactor_slot_background"), self.rect)
         if self.content:
             # Draw content image
             content_rect = self.content.image.get_rect(center=self.rect.center)
             surface.blit(self.content.image, content_rect)
-            # Draw timeout progress bar
+            # Draw timeout progress bar with dynamic color
             now = datetime.datetime.now()
             elapsed = (now - self.content.creation).total_seconds()
             remaining = max(0, self.content.timeout - elapsed)
@@ -72,8 +70,15 @@ class Box:
             bar_y = self.rect.y + self.size - bar_height - 2
             # Bar background
             pygame.draw.rect(surface, (100, 100, 100), (self.rect.x, bar_y, self.size, bar_height))
-            # Bar fill
-            pygame.draw.rect(surface, (50, 200, 50), (bar_x, bar_y, bar_width, bar_height))
+            # Interpolate color from green to orange based on time remaining
+            green = (50, 200, 50)
+            orange = (255, 165, 0)
+            fill_color = (
+                int(orange[0] + (green[0] - orange[0]) * ratio),
+                int(orange[1] + (green[1] - orange[1]) * ratio),
+                int(orange[2] + (green[2] - orange[2]) * ratio)
+            )
+            pygame.draw.rect(surface, fill_color, (bar_x, bar_y, bar_width, bar_height))
 
     def is_hovered(self, mouse_pos: tuple) -> bool:
         return self.rect.collidepoint(mouse_pos)
@@ -91,6 +96,7 @@ class Box:
     def remove(self):
         self.occupied = False
         self.content = None
+
 
 class Grid:
     """
@@ -142,6 +148,7 @@ class ShopBox:
         self.active = active
         self.outline_color = (50, 200, 50) if self.active else (200, 200, 200)
 
+
 class Shop:
     """
     A horizontal row of ShopBox items where only one can be active at a time.
@@ -151,21 +158,27 @@ class Shop:
         for i, content in enumerate(contents):
             x = origin[0] + i * (box_size + spacing)
             y = origin[1]
-            self.items.append(ShopBox((x, y), box_size, content))
+            box = ShopBox((x, y), box_size, content)
+            self.items.append(box)
+        # Always have one selected by default
+        if self.items:
+            self.items[0].set_active(True)
 
     def draw(self, surface: pygame.Surface):
         for item in self.items:
             item.draw(surface)
 
-    def handle_click(self, mouse_pos: tuple, money: int) -> bool:
-        clicked = False
+    def handle_click(self, mouse_pos: tuple, money: float) -> bool:
+        # Only change selection when clicking on a shop box
         for item in self.items:
-            if item.is_hovered(mouse_pos) and money >= item.content.cost:
-                item.set_active(True)
-                clicked = True
-            else:
-                item.set_active(False)
-        return clicked
+            if item.is_hovered(mouse_pos):
+                if money >= item.content.cost:
+                    # Activate clicked, deactivate others
+                    for other in self.items:
+                        other.set_active(other is item)
+                # Regardless of affordability, consume the click (no grid placement)
+                return True
+        return False
 
     def get_active_content(self):
         for item in self.items:
@@ -186,7 +199,7 @@ pygame.display.set_caption('Idle Grid Game')
 money_font = pygame.font.Font(None, 36)
 
 # Initialize money
-money = 500
+money = 500.0
 
 # Set up income and expiration timer (every 1 second)
 INCOME_EVENT = pygame.USEREVENT + 1
@@ -199,7 +212,7 @@ contents = [
     Content("Speed", pygame.Surface((32,32)).convert(), cost=20, timeout=20, income=0.2)
 ]
 contents[1].image.fill((0,200,255))
-shop = Shop(origin=(20, 50), box_size=50, contents=contents)
+shop = Shop(origin=(20, 60), box_size=50, contents=contents)
 
 running = True
 while running:
@@ -218,13 +231,15 @@ while running:
                             box.remove()
         elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
             pos = event.pos
+            # First handle shop clicks
+            if shop.handle_click(pos, money):
+                continue
+            # Otherwise, attempt grid placement
             active = shop.get_active_content()
             if active and money >= active.cost:
                 placed = grid.place_content(pos, active)
                 if placed:
                     money -= active.cost
-            if not shop.handle_click(pos, money):
-                pass
 
     # Draw
     screen.fill((30, 30, 30))
@@ -232,7 +247,7 @@ while running:
     shop.draw(screen)
     screen.blit(image_dict['shop_logo'], shop_logo_rect)
     # Money counter
-    money_surf = money_font.render(f"Money: {money}", True, (255, 255, 0))
+    money_surf = money_font.render(f"Money: {round(money)}", True, (255, 255, 0))
     screen.blit(money_surf, (20, 550))
     pygame.display.flip()
 

@@ -1,7 +1,8 @@
 import pygame
 import datetime
-import csv 
+import csv
 import os
+
 # --- Content Class ---
 class Content:
     """
@@ -26,26 +27,35 @@ class Content:
             timeout=self.timeout,
             income=self.income
         )
+
+
 def compile_image_list():
-    image_list=[]
-    print(os.listdir('misc'))
+    image_list = []
     for item in os.listdir('misc'):
-        image_list.append((f'misc\{item}',item[:-4]))
+        image_list.append((f'misc/{item}', item[:-4]))
     with open('shop_objects.csv', newline='') as f:
-            reader = csv.DictReader(f)
-            for row in reader:
-                name=row['image']
-                image_list.append(((f'assets\{name}.png'),row['name']))
+        reader = csv.DictReader(f)
+        for row in reader:
+            image_list.append((f'assets/{row["image"]}.png', row['name']))
     return image_list
+
 
 def load_images():
     global image_dict
     image_dict = {}
-    for image in compile_image_list():
+    for path, key in compile_image_list():
         try:
-            image_dict[image[1]] = pygame.image.load(image[0])
+            image_dict[key] = pygame.image.load(path)
         except pygame.error:
-            print("Failed to load {image[0]}")
+            print(f"Failed to load {path}")
+
+def load_shop_contents():
+    contents=[]
+    with open('shop_objects.csv', newline='') as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            contents.append(Content(row['name'], image_dict.get(row['image']), int(row['cost']),int(row['timeout']), float(row['income'])))
+    return contents
 
 # --- Box and Grid Classes ---
 class Box:
@@ -63,13 +73,12 @@ class Box:
         self.content = None
 
     def draw(self, surface: pygame.Surface):
-            # Draw background
         surface.blit(image_dict.get("reactor_slot_background"), self.rect)
         if self.content:
             # Draw content image
             content_rect = self.content.image.get_rect(center=self.rect.center)
             surface.blit(self.content.image, content_rect)
-            # Draw timeout progress bar with dynamic color
+            # Draw timeout progress bar
             now = datetime.datetime.now()
             elapsed = (now - self.content.creation).total_seconds()
             remaining = max(0, self.content.timeout - elapsed)
@@ -78,9 +87,7 @@ class Box:
             bar_height = 5
             bar_x = self.rect.x
             bar_y = self.rect.y + self.size - bar_height - 2
-            # Bar background
             pygame.draw.rect(surface, (100, 100, 100), (self.rect.x, bar_y, self.size, bar_height))
-            # Interpolate color from green to orange based on time remaining
             green = (50, 200, 50)
             orange = (255, 165, 0)
             fill_color = (
@@ -94,9 +101,6 @@ class Box:
         return self.rect.collidepoint(mouse_pos)
 
     def place(self, content: Content) -> bool:
-        """
-        Place a cloned copy of the given content into this box if empty.
-        """
         if not self.occupied:
             self.occupied = True
             self.content = content.clone()
@@ -161,13 +165,15 @@ class ShopBox:
 
 class Shop:
     """
-    A horizontal row of ShopBox items where only one can be active at a time.
+    A layout of ShopBox items in rows of 3 per line.
     """
-    def __init__(self, origin: tuple, box_size: int, contents: list, spacing: int = 10):
+    def __init__(self, origin: tuple, box_size: int, contents: list, spacing: int = 10, items_per_row: int = 3):
         self.items = []
-        for i, content in enumerate(contents):
-            x = origin[0] + i * (box_size + spacing)
-            y = origin[1]
+        for idx, content in enumerate(contents):
+            row = idx // items_per_row
+            col = idx % items_per_row
+            x = origin[0] + col * (box_size + spacing)
+            y = origin[1] + row * (box_size + spacing)
             box = ShopBox((x, y), box_size, content)
             self.items.append(box)
         # Always have one selected by default
@@ -179,14 +185,11 @@ class Shop:
             item.draw(surface)
 
     def handle_click(self, mouse_pos: tuple, money: float) -> bool:
-        # Only change selection when clicking on a shop box
         for item in self.items:
             if item.is_hovered(mouse_pos):
                 if money >= item.content.cost:
-                    # Activate clicked, deactivate others
                     for other in self.items:
                         other.set_active(other is item)
-                # Regardless of affordability, consume the click (no grid placement)
                 return True
         return False
 
@@ -211,23 +214,21 @@ money_font = pygame.font.Font(None, 36)
 # Initialize money
 money = 500.0
 
-# Set up income and expiration timer (every 1 second)
+# Set up timers
 INCOME_EVENT = pygame.USEREVENT + 1
 pygame.time.set_timer(INCOME_EVENT, 100)
 
-# Create grid and shop
+# Instantiate
 grid = Grid(rows=10, cols=10, box_size=50, origin=(200, 50))
 
-contents = [
-    Content("Power", image_dict["uranium_rod"], cost=10, timeout=15, income=0.1),
-    Content("yellow_rod", image_dict["yellow_rod"], cost=20, timeout=20, income=0.2),
-    Content("Power", image_dict["uranium_rod"], cost=10, timeout=15, income=0.1),
-    Content("yellow_rod", image_dict["yellow_rod"], cost=20, timeout=20, income=0.2),
-    Content("Power", image_dict["uranium_rod"], cost=10, timeout=15, income=0.1),
-    Content("yellow_rod", image_dict["yellow_rod"], cost=20, timeout=20, income=0.2)
+contents = load_shop_contents()
+[
+    Content("Power", image_dict.get("uranium_rod"), cost=10, timeout=15, income=0.1),
+    Content("yellow_rod", image_dict.get("yellow_rod"), cost=20, timeout=20, income=0.2),
+    Content("extra1", image_dict.get("red_rod"), cost=30, timeout=25, income=0.3),
+    Content("extra2", image_dict.get("blue_rod"), cost=40, timeout=30, income=0.4)
 ]
-
-shop = Shop(origin=(20, 60), box_size=50, contents=contents)
+shop = Shop(origin=(20, 60), box_size=50, contents=contents, spacing=10, items_per_row=3)
 
 running = True
 while running:
@@ -236,7 +237,6 @@ while running:
         if event.type == pygame.QUIT:
             running = False
         elif event.type == INCOME_EVENT:
-            # Income generation and expiration check
             for row in grid.cells:
                 for box in row:
                     if box.content:
@@ -246,22 +246,18 @@ while running:
                             box.remove()
         elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
             pos = event.pos
-            # First handle shop clicks
             if shop.handle_click(pos, money):
                 continue
-            # Otherwise, attempt grid placement
             active = shop.get_active_content()
             if active and money >= active.cost:
                 placed = grid.place_content(pos, active)
                 if placed:
                     money -= active.cost
 
-    # Draw
     screen.fill((30, 30, 30))
     grid.draw(screen)
     shop.draw(screen)
-    screen.blit(image_dict['shop_logo'], shop_logo_rect)
-    # Money counter
+    screen.blit(image_dict.get('shop_logo'), shop_logo_rect)
     money_surf = money_font.render(f"Money: {round(money)}", True, (255, 255, 0))
     screen.blit(money_surf, (20, 550))
     pygame.display.flip()

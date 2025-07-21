@@ -1,3 +1,5 @@
 name,image,cost,timeout,income
-uranium_rod,uranium_rod.png,10,15,0.1
-yellow_rod,yellow_rod.png,20,20,0.2
+uranium_rod,uranium_rod,10,15,0.1
+yellow_rod,yellow_rod,20,20,0.2
+red_rod,red_rod,50,25,0.5
+blue_rod,blue_rod,250,30,2.5

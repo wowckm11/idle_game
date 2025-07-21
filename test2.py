@@ -5,10 +5,12 @@ class Content:
     """
     Represents an item or upgrade available in the shop.
     """
-    def __init__(self, name: str, image: pygame.Surface, cost: int):
+    def __init__(self, name: str, image: pygame.Surface, cost: int, timeout: int, income: int):
         self.name = name
         self.image = image
         self.cost = cost
+        self.timeout = timeout
+        self.income = income
 
 
 def load_images():
@@ -155,7 +157,7 @@ screen = pygame.display.set_mode((800, 600))
 grid = Grid(rows=10, cols=10, box_size=50, origin=(300, 50))
 dummy_img1 = pygame.Surface((32, 32)); dummy_img1.fill((255, 215, 0))
 dummy_img2 = pygame.Surface((32, 32)); dummy_img2.fill((0, 200, 255))
-contents = [Content("Power", image_dict["uranium_rod"], 100), Content("Speed", dummy_img2, 200)]
+contents = [Content("Power", image_dict["uranium_rod"], 100,15,1), Content("Speed", dummy_img2, 200)]
 shop = Shop(origin=(20, 50), box_size=50, contents=contents)
 
 running = True

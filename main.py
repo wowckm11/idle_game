@@ -1,7 +1,7 @@
 import pygame
 import datetime
 import csv 
-
+import os
 # --- Content Class ---
 class Content:
     """
@@ -26,18 +26,26 @@ class Content:
             timeout=self.timeout,
             income=self.income
         )
-
+def compile_image_list():
+    image_list=[]
+    print(os.listdir('misc'))
+    for item in os.listdir('misc'):
+        image_list.append((f'misc\{item}',item[:-4]))
+    with open('shop_objects.csv', newline='') as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                name=row['image']
+                image_list.append(((f'assets\{name}.png'),row['name']))
+    return image_list
 
 def load_images():
     global image_dict
     image_dict = {}
-    try:
-        image_dict["reactor_slot_background"] = pygame.image.load('reactor_slot_background.png')
-        image_dict["uranium_rod"] = pygame.image.load('uranium_rod.png')
-        image_dict['shop_logo'] = pygame.image.load('shop_logo.png')
-        image_dict['yellow_rod'] = pygame.image.load('yellow_rod.png')
-    except pygame.error:
-        print("Failed to load images")
+    for image in compile_image_list():
+        try:
+            image_dict[image[1]] = pygame.image.load(image[0])
+        except pygame.error:
+            print("Failed to load {image[0]}")
 
 # --- Box and Grid Classes ---
 class Box:
@@ -211,8 +219,13 @@ pygame.time.set_timer(INCOME_EVENT, 100)
 grid = Grid(rows=10, cols=10, box_size=50, origin=(200, 50))
 
 contents = [
-    Content("uranium_rod", image_dict["uranium_rod"], cost=10, timeout=15, income=0.1),
-    Content("yellow_rod", image_dict["yellow_rod"], cost=20, timeout=20, income=0.2)]
+    Content("Power", image_dict["uranium_rod"], cost=10, timeout=15, income=0.1),
+    Content("yellow_rod", image_dict["yellow_rod"], cost=20, timeout=20, income=0.2),
+    Content("Power", image_dict["uranium_rod"], cost=10, timeout=15, income=0.1),
+    Content("yellow_rod", image_dict["yellow_rod"], cost=20, timeout=20, income=0.2),
+    Content("Power", image_dict["uranium_rod"], cost=10, timeout=15, income=0.1),
+    Content("yellow_rod", image_dict["yellow_rod"], cost=20, timeout=20, income=0.2)
+]
 
 shop = Shop(origin=(20, 60), box_size=50, contents=contents)
 

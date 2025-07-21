@@ -56,7 +56,7 @@ def load_shop_contents():
     with open('shop_objects.csv', newline='') as f:
         reader = csv.DictReader(f)
         for row in reader:
-            contents.append(Content(row['name'], image_dict.get(row['image']), int(row['cost']),int(row['timeout']), float(row['income']), 'Shop'))
+            contents.append(Content(row['name'], image_dict.get(row['image']), int(row['cost']),int(row['timeout']), float(row['income']), 'shop_logo'))
     return contents
 
 # --- Box and Grid Classes ---
@@ -146,7 +146,7 @@ class Shop:
     """
     A layout of ShopBox items in rows of 3 per line.
     """
-    def __init__(self, origin: tuple, box_size: int, contents: list, spacing: int = 10, items_per_row: int = 3):
+    def __init__(self, origin: tuple, box_size: int, contents: list, spacing: int = 20, items_per_row: int = 4):
         self.items = []
         for idx, content in enumerate(contents):
             row = idx // items_per_row
@@ -182,7 +182,7 @@ class Panel:
     """
     Displays a grid of ShopBox for one category.
     """
-    def __init__(self, origin, size, items, cols=3, spacing=10):
+    def __init__(self, origin, size, items, cols=6, spacing=20):
         self.boxes=[]
         for i,item in enumerate(items):
             r=i//cols; c=i%cols
@@ -215,28 +215,25 @@ class TabBar:
     def __init__(self,tabs,origin,font):
         self.tabs=tabs; self.active=tabs[0]; self.font=font
         self.rects=[]
-        x0,y0=origin; w,h=100,30
+        x0,y0=origin; w,h=100,50
         for i,t in enumerate(tabs):
             self.rects.append((t,pygame.Rect(x0+i*w,y0,w,h)))
 
     def draw(self,surf):
         for t,rect in self.rects:
             bg=(80,80,80) if t==self.active else (30,30,30)
-            pygame.draw.rect(surf,bg,rect)
-            txt=self.font.render(t,True,(255,255,255))
-            surf.blit(txt,txt.get_rect(center=rect.center))
-
+            txt=pygame.draw.rect(surf,bg,rect)
+            surf.blit(image_dict[f'{t}'],txt)
     def handle_click(self,pos):
         for t,rect in self.rects:
             if rect.collidepoint(pos): self.active=t; return True
         return False
 
 # Shop logo rect
-shop_logo_rect = pygame.Rect(50, 0, 50, 100)
 
 pygame.init()
 load_images()
-screen=pygame.display.set_mode((800,600))
+screen=pygame.display.set_mode((1000,800))
 pygame.display.set_caption('Idle Grid with Tabs')
 font=pygame.font.Font(None,36)
 money_font=pygame.font.Font(None,28)
@@ -246,10 +243,10 @@ INCOME=pygame.USEREVENT+1
 pygame.time.set_timer(INCOME,1000)
 # load items and panels
 all_items=load_shop_contents()
-cats=['Shop','Infrastructure','Upgrades']
-panels={cat:Panel((20,60),50,[i for i in all_items if i.category==cat]) for cat in cats}
+cats=['shop_logo','infrastructure_logo','upgrade_logo']
+panels={cat:Panel((20,100),50,[i for i in all_items if i.category==cat]) for cat in cats}
 tabbar=TabBar(cats,(20,20),font)
-grid=Grid(10,10,50,(200,50))
+grid=Grid(10,10,50,(450,50))
 # main loop
 running=True
 while running:

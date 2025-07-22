@@ -359,16 +359,57 @@ C_arr = np.zeros((rows, cols), dtype=float)  # conductivity array
 # Laplacian kernel for diffusion
 lap_kernel = np.array([[0,1,0], [1,-4,1], [0,1,0]], dtype=float)
 
+
 def update_heat_array(H, G, C_arr, M, dt):
-    # 1) generate heat, but don't exceed capacity
-    H[:] = np.minimum(H + G * dt, M)
-    # 2) diffuse heat with reflective boundaries (no edge leakage)
-    lap = convolve2d(
-        H, lap_kernel,
-        mode='same', boundary='symm'
-    )
-    H[:] += dt * (C_arr * lap)
-    # 3) clamp between 0 and max capacity
+    # Create a copy of H for read-only purposes
+    H_old = H.copy()
+    
+    # Apply heat generation first
+    H[:] = H_old + G * dt
+    
+    # Create a change array to accumulate heat transfers
+    dH = np.zeros_like(H)
+    
+    # Apply diffusion using finite differences based on temperature
+    rows, cols = H.shape
+    for i in range(rows):
+        for j in range(cols):
+            # Skip empty cells (no heat capacity)
+            if M[i, j] <= 0:
+                continue
+                
+            # Calculate current temperature for this cell
+            temp_i = H[i, j] / M[i, j]
+            
+            # Check all 4 neighbors
+            for di, dj in [(0, 1), (1, 0), (0, -1), (-1, 0)]:
+                ni, nj = i + di, j + dj
+                if 0 <= ni < rows and 0 <= nj < cols:
+                    # Skip empty neighbors
+                    if M[ni, nj] <= 0:
+                        continue
+                    
+                    # Calculate neighbor temperature
+                    temp_j = H[ni, nj] / M[ni, nj]
+                    
+                    # Calculate heat transfer based on average conductivity and temp difference
+                    avg_conductivity = (C_arr[i, j] + C_arr[ni, nj]) / 2
+                    temp_diff = temp_i - temp_j
+                    heat_transfer = dt * avg_conductivity * temp_diff
+                    
+                    # Optional: Add a max heat transfer limit for stability
+                    max_transfer = 0.5
+                    heat_transfer = np.clip(heat_transfer, -max_transfer, max_transfer)
+                    
+                    # Apply transfer to neighbor
+                    dH[ni, nj] += heat_transfer
+                    # Apply opposite change to current cell
+                    dH[i, j] -= heat_transfer
+    
+    # Apply the accumulated heat changes
+    H += dH
+    
+    # Clamp values to valid range
     np.clip(H, 0, M, out=H)
 
 # main loop

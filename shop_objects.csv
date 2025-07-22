@@ -1,8 +1,8 @@
 category,name,image,cost,timeout,income,heat_generation,max_heat,conductivity
 shop_logo,uranium_rod,uranium_rod,10,15,1,1,5,1
-shop_logo,yellow_rod,yellow_rod,20,20,2,2,5,1
-shop_logo,red_rod,red_rod,50,25,5,3,3,1
-shop_logo,blue_rod,blue_rod,250,30,5,5,5,1
-systems_logo,heat_sink,heat_sink,25,0,0,0,50,0.05
-systems_logo,pipe,pipe,25,0,0,0,5,2
+shop_logo,yellow_rod,yellow_rod,20,20,4,2,10,1
+shop_logo,red_rod,red_rod,50,25,5,8,250,1
+shop_logo,blue_rod,blue_rod,250,30,16,16,80,1
+systems_logo,heat_sink,heat_sink,25,0,0,0,5000,0.1
+systems_logo,pipe,pipe,25,0,0,0,5,5
 systems_logo,lvl1_cooling,lvl1_cooling,25,0,0,-0.025,0,0

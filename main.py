@@ -1,5 +1,4 @@
 import pygame
-import datetime
 import csv
 import os
 import numpy as np
@@ -8,8 +7,7 @@ import numpy as np
 HEAT_COLORS = [(int(255 * r), int(255 * (1 - r)), 0) for r in np.linspace(0, 1, 256)]
 
 #config
-
-game_speed = 50 #number of miliseconds per action 50 => happens 20 times a second
+game_speed_actions_per_second=20
 
 # --- Content Class ---
 class Content:
@@ -21,7 +19,7 @@ class Content:
         self.image = image
         self.cost = cost
         self.timeout = timeout
-        self.creation = datetime.datetime.now()
+        self.creation = pygame.time.get_ticks()
         self.income = income
         self.category = category
         self.heat = 0.0
@@ -36,7 +34,7 @@ class Content:
             image=self.image,
             cost=self.cost,
             timeout=self.timeout,
-            income=self.income,
+            income=self.income/game_speed_actions_per_second,
             category=self.category,
             heat_generation=self.heat_generation,
             max_heat=self.max_heat,
@@ -109,7 +107,7 @@ class Box:
             
             # Expiration bar
             if not self.content.permanent:
-                elapsed = (datetime.datetime.now() - self.content.creation).total_seconds()
+                elapsed = (pygame.time.get_ticks() - self.content.creation)/1000
                 remaining = max(0, self.content.timeout - elapsed)
                 ratio = remaining / self.content.timeout
                 bar_rect = (self.rect.x, self.rect.y + self.size - 7, self.size, 5)
@@ -257,10 +255,7 @@ def update_heat_array(H, G, C_arr, M, dt):
                     avg_cond = C_arr[i, j]
                     temp_diff = temp_i - temp_j
                     heat_transfer = dt * avg_cond * temp_diff
-                    
-                    # Stability limit
-                    max_transfer = 0.02 * min(M[i, j], M[ni, nj])
-                    heat_transfer = np.clip(heat_transfer, -max_transfer, max_transfer)
+
                     
                     dH[i, j] -= heat_transfer
                     dH[ni, nj] += heat_transfer
@@ -293,7 +288,7 @@ money = 500000.0
 # Timers
 
 INCOME = pygame.USEREVENT + 1
-pygame.time.set_timer(INCOME, game_speed)
+pygame.time.set_timer(INCOME, 1000//game_speed_actions_per_second)
 
 # Load items and panels
 all_items = load_shop_contents()
@@ -317,16 +312,16 @@ last_time = pygame.time.get_ticks()
 
 while running:
     current_time = pygame.time.get_ticks()
-    dt = (current_time - last_time)/game_speed
-    last_time = current_time
+    dt = (current_time - last_time)/game_speed_actions_per_second
+    last_time = current_time   
     
     for e in pygame.event.get():
         if e.type == pygame.QUIT: 
             running = False
             
         elif e.type == INCOME:
+
             update_heat_array(H, G, C_arr, M, dt)
-            now = datetime.datetime.now()
             
             for r in range(rows):
                 for c in range(cols):
@@ -338,7 +333,7 @@ while running:
                     money += b.content.income
                     
                     if not b.content.permanent:
-                        elapsed = (now - b.content.creation).total_seconds()
+                        elapsed = (pygame.time.get_ticks() - b.content.creation)/1000
                         if elapsed >= b.content.timeout:
                             b.remove()
                             continue

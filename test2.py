@@ -2,25 +2,35 @@ import pygame
 import datetime
 import csv
 import os
+import numpy as np
+from scipy.signal import convolve2d
 
 # --- Content Class ---
 class Content:
     """
     Represents an item or upgrade available in the shop.
     """
-    def __init__(self, name: str, image: pygame.Surface, cost: int, timeout: int, income: float, heat_generation: float, category: str):
+    def __init__(self, name: str, image: pygame.Surface, cost: int,
+                 timeout: int, income: float, category: str,
+                 heat_generation: float = 0.0, max_heat: float = 5.0,
+                 conductivity: float = 0.0):
         self.name = name
         self.image = image
         self.cost = cost
         self.timeout = timeout  # seconds
         self.creation = datetime.datetime.now()
         self.income = income
-        self.heat_generation = heat_generation
         self.category = category
+        # Heat properties
+        self.heat = 0.0
+        self.heat_generation = heat_generation  # units per second
+        self.max_heat = max_heat
+        self.conductivity = conductivity  # heat transfer rate
+        self.permanent = (timeout == 0)
 
     def clone(self):
         """
-        Create a fresh copy with new timestamp.
+        Create a fresh copy with new timestamp, preserving heat settings.
         """
         return Content(
             name=self.name,
@@ -28,8 +38,10 @@ class Content:
             cost=self.cost,
             timeout=self.timeout,
             income=self.income,
+            category=self.category,
             heat_generation=self.heat_generation,
-            category=self.category
+            max_heat=self.max_heat,
+            conductivity=self.conductivity
         )
 
 
@@ -53,74 +65,161 @@ def load_images():
         except pygame.error:
             print(f"Failed to load {path}")
 
+
 def load_shop_contents():
-    contents=[]
+    contents = []
     with open('shop_objects.csv', newline='') as f:
         reader = csv.DictReader(f)
         for row in reader:
-            contents.append(Content(row['name'], image_dict.get(row['image']), int(row['cost']),int(row['timeout']),float(row['income']),float(row['heat_generation']), 'shop_logo'))
+            img = image_dict.get(row['image'])
+            # parse new heat fields
+            gen = float(row.get('heat_generation', 0.0))
+            mh  = float(row.get('max_heat', 5.0))
+            cond = float(row.get('conductivity', 0.0))
+            contents.append(Content(
+                row['name'], img,
+                int(row['cost']), int(row['timeout']),
+                float(row['income']), row.get('category', 'shop_logo'),
+                heat_generation=gen,
+                max_heat=mh,
+                conductivity=cond
+            ))
     return contents
-
 # --- Box and Grid Classes ---
 class Box:
     """
-    Cell in main grid with expiration bar.
+    Cell in main grid with expiration and heat bars.
     """
     def __init__(self, row, col, size, origin):
-        x = origin[0] + col*size
-        y = origin[1] + row*size
+        x = origin[0] + col * size
+        y = origin[1] + row * size
         self.rect = pygame.Rect(x, y, size, size)
         self.size = size
         self.occupied = False
         self.content = None
+        # Store grid coordinates for diffusion mapping
+        self.row = row
+        self.col = col
 
     def draw(self, surf):
         surf.blit(image_dict['reactor_slot_background'], self.rect)
         if self.content:
-            surf.blit(self.content.image, self.content.image.get_rect(center=self.rect.center))
-            now = datetime.datetime.now()
-            elapsed = (now - self.content.creation).total_seconds()
-            remaining = max(0, self.content.timeout - elapsed)
-            ratio = remaining/self.content.timeout if self.content.timeout>0 else 0
-            bar_h = 5
-            bx, by = self.rect.x, self.rect.y + self.size - bar_h - 2
-            pygame.draw.rect(surf, (100,100,100), (bx,by,self.size,bar_h))
-            green, orange = (50,200,50),(255,165,0)
-            fill_color = (
-                int(orange[0] + (green[0]-orange[0])*ratio),
-                int(orange[1] + (green[1]-orange[1])*ratio),
-                int(orange[2] + (green[2]-orange[2])*ratio)
+            # Draw content image
+            surf.blit(
+                self.content.image,
+                self.content.image.get_rect(center=self.rect.center)
             )
-            pygame.draw.rect(surf, fill_color, (bx,by,int(self.size*ratio),bar_h))
+            # Heat bar at top
+            ratio_h = (
+                self.content.heat / self.content.max_heat
+                if self.content.max_heat > 0 else 0
+            )
+            hb_h = 4
+            hb_x = self.rect.x
+            hb_y = self.rect.y + 2
+            # Background of heat bar
+            pygame.draw.rect(
+                surf, (50, 50, 50),
+                (hb_x, hb_y, self.size, hb_h)
+            )
+            # Color from green to red
+            heat_color = (
+                int(255 * ratio_h),
+                int(255 * (1 - ratio_h)),
+                0
+            )
+            pygame.draw.rect(
+                surf, heat_color,
+                (hb_x, hb_y, int(self.size * ratio_h), hb_h)
+            )
+            # Expiration bar at bottom (skip if permanent)
+            if not self.content.permanent:
+                now = datetime.datetime.now()
+                elapsed = (now - self.content.creation).total_seconds()
+                remaining = max(0, self.content.timeout - elapsed)
+                ratio = (
+                    remaining / self.content.timeout
+                    if self.content.timeout > 0 else 0
+                )
+                bar_h = 5
+                bx, by = self.rect.x, self.rect.y + self.size - bar_h - 2
+                pygame.draw.rect(
+                    surf, (100, 100, 100),
+                    (bx, by, self.size, bar_h)
+                )
+                green, orange = (50, 200, 50), (255, 165, 0)
+                fill_color = (
+                    int(orange[0] + (green[0] - orange[0]) * ratio),
+                    int(orange[1] + (green[1] - orange[1]) * ratio),
+                    int(orange[2] + (green[2] - orange[2]) * ratio)
+                )
+                pygame.draw.rect(
+                    surf, fill_color,
+                    (bx, by, int(self.size * ratio), bar_h)
+                ),
+                (bx, by, self.size, bar_h)
 
-    def is_hovered(self, pos): return self.rect.collidepoint(pos)
+                green, orange = (50, 200, 50), (255, 165, 0)
+                fill_color = (
+                    int(orange[0] + (green[0] - orange[0]) * ratio),
+                    int(orange[1] + (green[1] - orange[1]) * ratio),
+                    int(orange[2] + (green[2] - orange[2]) * ratio)
+                )
+                pygame.draw.rect(
+                    surf, fill_color,
+                    (bx, by, int(self.size * ratio), bar_h)
+                )
+
+    def is_hovered(self, pos):
+        return self.rect.collidepoint(pos)
 
     def place(self, content):
         if not self.occupied:
             self.occupied = True
             self.content = content.clone()
+            # Populate heat arrays
+            global H, G, M, C_arr
+            r, c = self.row, self.col
+            H[r, c] = 0.0
+            G[r, c] = self.content.heat_generation
+            M[r, c] = self.content.max_heat
+            C_arr[r, c] = self.content.conductivity
             return True
+        return False
         return False
 
     def remove(self):
-        self.occupied=False; self.content=None
-
+        # Clear heat arrays on removal
+        global H, G, M, C_arr
+        if self.content:
+            r, c = self.row, self.col
+            H[r, c] = 0.0
+            G[r, c] = 0.0
+            M[r, c] = 0.0
+            C_arr[r, c] = 0.0
+        self.occupied = False
+        self.content = None
 
 class Grid:
     """
     Main play grid.
     """
     def __init__(self, rows, cols, size, origin):
-        self.cells = [[Box(r,c,size,origin) for c in range(cols)] for r in range(rows)]
+        self.cells = [
+            [Box(r, c, size, origin) for c in range(cols)]
+            for r in range(rows)
+        ]
 
     def draw(self, surf):
         for row in self.cells:
-            for b in row: b.draw(surf)
+            for b in row:
+                b.draw(surf)
 
     def place(self, pos, content):
         for row in self.cells:
             for b in row:
-                if b.is_hovered(pos) and b.place(content): return True
+                if b.is_hovered(pos) and b.place(content):
+                    return True
         return False
 
 # --- Shop Classes ---
@@ -240,7 +339,6 @@ pygame.display.set_caption('Idle Grid with Tabs')
 font=pygame.font.Font(None,36)
 money_font=pygame.font.Font(None,28)
 money=500.0
-total_heat=0
 # timers
 INCOME=pygame.USEREVENT+1
 pygame.time.set_timer(INCOME,100)
@@ -249,24 +347,64 @@ all_items=load_shop_contents()
 cats=['shop_logo','systems_logo','upgrade_logo']
 panels={cat:Panel((20,100),50,[i for i in all_items if i.category==cat]) for cat in cats}
 tabbar=TabBar(cats,(20,20),font)
+# create grid
 grid=Grid(10,10,50,(450,50))
+# --- Heat arrays setup ---
+rows, cols = len(grid.cells), len(grid.cells[0])
+H = np.zeros((rows, cols), dtype=float)
+G = np.zeros((rows, cols), dtype=float)
+M = np.zeros((rows, cols), dtype=float)
+C_arr = np.zeros((rows, cols), dtype=float)  # conductivity array
+
+# Laplacian kernel for diffusion
+lap_kernel = np.array([[0,1,0], [1,-4,1], [0,1,0]], dtype=float)
+
+def update_heat_array(H, G, C_arr, dt):
+    # 1) generate heat, but don't exceed capacity
+    H[:] = H + G * dt
+    # 2) diffuse heat with reflective boundaries (no edge leakage)
+    lap = convolve2d(
+        H, lap_kernel,
+        mode='same', boundary='symm'
+    )
+    H[:] += dt * (C_arr * lap)
+
+
 # main loop
 running=True
 while running:
     now=datetime.datetime.now()
-    current_frame_heat_gain = 0.0
     for e in pygame.event.get():
         if e.type==pygame.QUIT: running=False
         elif e.type==INCOME:
-            for row in grid.cells:
-                for b in row:
-                    if b.content:
-                        money+=b.content.income
-                        current_frame_heat_gain += b.content.heat_generation
-                        if (now-b.content.creation).total_seconds()>=b.content.timeout:
+            # Vectorized heat update
+            dt = 0.1  # seconds per tick
+            update_heat_array(H, G, C_arr, dt)
+            # Sync back to each box and handle income/expiration/overflow
+            now = datetime.datetime.now()
+            for r in range(rows):
+                for c in range(cols):
+                    b = grid.cells[r][c]
+                    if not b.content:
+                        continue
+                    # Sync heat value
+                    b.content.heat = H[r, c]
+                    # Accrue income
+                    money += b.content.income
+                    # Expire non-permanent items
+                    if not b.content.permanent:
+                        elapsed = (now - b.content.creation).total_seconds()
+                        if elapsed >= b.content.timeout:
                             b.remove()
-            total_heat += current_frame_heat_gain
-        elif e.type==pygame.MOUSEBUTTONDOWN and e.button==1:
+                            # clear arrays
+                            H[r, c] = G[r, c] = M[r, c] = C_arr[r, c] = 0.0
+                            continue
+                    # Remove on heat overflow
+                    if b.content.heat >= b.content.max_heat:
+                        b.remove()
+                        H[r, c] = G[r, c] = M[r, c] = C_arr[r, c] = 0.0
+                        continue
+        elif e.type==pygame.MOUSEBUTTONDOWN and e.button==1 and e.button==1:
             pos=e.pos
             if tabbar.handle_click(pos): continue
             panel=panels[tabbar.active]
@@ -279,6 +417,5 @@ while running:
     tabbar.draw(screen)
     panels[tabbar.active].draw(screen)
     screen.blit(money_font.render(f"Money: {round(money)}",True,(255,215,0)),(20,550))
-    screen.blit(money_font.render(f"Heat: {round(total_heat, 1)}", True, (255, 100, 100)), (20, 580))
     pygame.display.flip()
 pygame.quit()

@@ -8,13 +8,14 @@ class Content:
     """
     Represents an item or upgrade available in the shop.
     """
-    def __init__(self, name: str, image: pygame.Surface, cost: int, timeout: int, income: float, category: str):
+    def __init__(self, name: str, image: pygame.Surface, cost: int, timeout: int, income: float, heat_generation: float, category: str):
         self.name = name
         self.image = image
         self.cost = cost
         self.timeout = timeout  # seconds
         self.creation = datetime.datetime.now()
         self.income = income
+        self.heat_generation = heat_generation
         self.category = category
 
     def clone(self):
@@ -27,6 +28,7 @@ class Content:
             cost=self.cost,
             timeout=self.timeout,
             income=self.income,
+            heat_generation=self.heat_generation,
             category=self.category
         )
 
@@ -56,7 +58,7 @@ def load_shop_contents():
     with open('shop_objects.csv', newline='') as f:
         reader = csv.DictReader(f)
         for row in reader:
-            contents.append(Content(row['name'], image_dict.get(row['image']), int(row['cost']),int(row['timeout']), float(row['income']), 'shop_logo'))
+            contents.append(Content(row['name'], image_dict.get(row['image']), int(row['cost']),int(row['timeout']),float(row['income']),float(row['heat_generation']), 'shop_logo'))
     return contents
 
 # --- Box and Grid Classes ---
@@ -238,6 +240,7 @@ pygame.display.set_caption('Idle Grid with Tabs')
 font=pygame.font.Font(None,36)
 money_font=pygame.font.Font(None,28)
 money=500.0
+total_heat=0
 # timers
 INCOME=pygame.USEREVENT+1
 pygame.time.set_timer(INCOME,100)
@@ -251,6 +254,7 @@ grid=Grid(10,10,50,(450,50))
 running=True
 while running:
     now=datetime.datetime.now()
+    current_frame_heat_gain = 0.0
     for e in pygame.event.get():
         if e.type==pygame.QUIT: running=False
         elif e.type==INCOME:
@@ -258,8 +262,10 @@ while running:
                 for b in row:
                     if b.content:
                         money+=b.content.income
+                        current_frame_heat_gain += b.content.heat_generation
                         if (now-b.content.creation).total_seconds()>=b.content.timeout:
                             b.remove()
+            total_heat += current_frame_heat_gain
         elif e.type==pygame.MOUSEBUTTONDOWN and e.button==1:
             pos=e.pos
             if tabbar.handle_click(pos): continue
@@ -273,5 +279,6 @@ while running:
     tabbar.draw(screen)
     panels[tabbar.active].draw(screen)
     screen.blit(money_font.render(f"Money: {round(money)}",True,(255,215,0)),(20,550))
+    screen.blit(money_font.render(f"Heat: {round(total_heat, 1)}", True, (255, 100, 100)), (20, 580))
     pygame.display.flip()
 pygame.quit()

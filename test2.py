@@ -359,16 +359,17 @@ C_arr = np.zeros((rows, cols), dtype=float)  # conductivity array
 # Laplacian kernel for diffusion
 lap_kernel = np.array([[0,1,0], [1,-4,1], [0,1,0]], dtype=float)
 
-def update_heat_array(H, G, C_arr, dt):
+def update_heat_array(H, G, C_arr, M, dt):
     # 1) generate heat, but don't exceed capacity
-    H[:] = H + G * dt
+    H[:] = np.minimum(H + G * dt, M)
     # 2) diffuse heat with reflective boundaries (no edge leakage)
     lap = convolve2d(
         H, lap_kernel,
         mode='same', boundary='symm'
     )
     H[:] += dt * (C_arr * lap)
-
+    # 3) clamp between 0 and max capacity
+    np.clip(H, 0, M, out=H)
 
 # main loop
 running=True
@@ -379,7 +380,7 @@ while running:
         elif e.type==INCOME:
             # Vectorized heat update
             dt = 0.1  # seconds per tick
-            update_heat_array(H, G, C_arr, dt)
+            update_heat_array(H, G, C_arr, M, dt)
             # Sync back to each box and handle income/expiration/overflow
             now = datetime.datetime.now()
             for r in range(rows):

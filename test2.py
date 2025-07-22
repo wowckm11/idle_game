@@ -405,7 +405,16 @@ def update_heat_array(H, G, C_arr, M, dt):
                     dH[ni, nj] += heat_transfer
                     # Apply opposite change to current cell
                     dH[i, j] -= heat_transfer
-    
+                    
+            for i in range(rows):
+                for j in range(cols):
+                    if G[i, j] < 0 and M[i, j] == 0:
+                        removal = -G[i, j] * dt
+                        # remove from neighbors
+                        for di, dj in [(0,1),(1,0),(0,-1),(-1,0)]:
+                            ni, nj = i + di, j + dj
+                            if 0 <= ni < rows and 0 <= nj < cols:
+                                H[ni, nj] = max(0.0, H[ni, nj] - removal)
     # Apply the accumulated heat changes
     H += dH
     

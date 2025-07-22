@@ -1,5 +1,4 @@
 import pygame
-import datetime
 import csv
 import os
 import numpy as np
@@ -21,7 +20,7 @@ class Content:
         self.image = image
         self.cost = cost
         self.timeout = timeout
-        self.creation = datetime.datetime.now()
+        self.creation = pygame.time.get_ticks()
         self.income = income
         self.category = category
         self.heat = 0.0
@@ -109,7 +108,7 @@ class Box:
             
             # Expiration bar
             if not self.content.permanent:
-                elapsed = (datetime.datetime.now() - self.content.creation).total_seconds()
+                elapsed = (pygame.time.get_ticks() - self.content.creation)
                 remaining = max(0, self.content.timeout - elapsed)
                 ratio = remaining / self.content.timeout
                 bar_rect = (self.rect.x, self.rect.y + self.size - 7, self.size, 5)
@@ -326,7 +325,6 @@ while running:
             
         elif e.type == INCOME:
             update_heat_array(H, G, C_arr, M, dt)
-            now = datetime.datetime.now()
             
             for r in range(rows):
                 for c in range(cols):
@@ -338,7 +336,7 @@ while running:
                     money += b.content.income
                     
                     if not b.content.permanent:
-                        elapsed = (now - b.content.creation).total_seconds()
+                        elapsed = (pygame.time.get_ticks() - b.content.creation)
                         if elapsed >= b.content.timeout:
                             b.remove()
                             continue

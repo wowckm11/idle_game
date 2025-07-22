@@ -7,8 +7,8 @@ import numpy as np
 HEAT_COLORS = [(int(255 * r), int(255 * (1 - r)), 0) for r in np.linspace(0, 1, 256)]
 
 #config
-
-game_speed = 50 #number of miliseconds per action 50 => happens 20 times a second
+game_speed_actions_per_second=1
+game_speed = 1000//game_speed_actions_per_second #number of miliseconds per action 50 => happens 20 times a second
 
 # --- Content Class ---
 class Content:
@@ -19,7 +19,7 @@ class Content:
         self.name = name
         self.image = image
         self.cost = cost
-        self.timeout = timeout
+        self.timeout = timeout/game_speed_actions_per_second
         self.creation = pygame.time.get_ticks()
         self.income = income
         self.category = category
@@ -108,7 +108,7 @@ class Box:
             
             # Expiration bar
             if not self.content.permanent:
-                elapsed = (pygame.time.get_ticks() - self.content.creation)
+                elapsed = (pygame.time.get_ticks() - self.content.creation)/1000
                 remaining = max(0, self.content.timeout - elapsed)
                 ratio = remaining / self.content.timeout
                 bar_rect = (self.rect.x, self.rect.y + self.size - 7, self.size, 5)
@@ -317,13 +317,14 @@ last_time = pygame.time.get_ticks()
 while running:
     current_time = pygame.time.get_ticks()
     dt = (current_time - last_time)/game_speed
-    last_time = current_time
+    last_time = current_time   
     
     for e in pygame.event.get():
         if e.type == pygame.QUIT: 
             running = False
             
         elif e.type == INCOME:
+
             update_heat_array(H, G, C_arr, M, dt)
             
             for r in range(rows):
@@ -336,7 +337,7 @@ while running:
                     money += b.content.income
                     
                     if not b.content.permanent:
-                        elapsed = (pygame.time.get_ticks() - b.content.creation)
+                        elapsed = (pygame.time.get_ticks() - b.content.creation)/1000
                         if elapsed >= b.content.timeout:
                             b.remove()
                             continue

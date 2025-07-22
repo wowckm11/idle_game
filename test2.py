@@ -20,7 +20,7 @@ class Content:
         self.name = name
         self.image = image
         self.cost = cost
-        self.timeout = timeout
+        self.timeout = timeout*40
         self.creation = datetime.datetime.now()
         self.income = income
         self.category = category
@@ -319,7 +319,7 @@ while running:
     current_time = pygame.time.get_ticks()
     dt = (current_time - last_time)/game_speed
     last_time = current_time
-    
+
     for e in pygame.event.get():
         if e.type == pygame.QUIT: 
             running = False

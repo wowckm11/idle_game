@@ -8,7 +8,9 @@ class Content:
     """
     Represents an item or upgrade available in the shop.
     """
-    def __init__(self, name: str, image: pygame.Surface, cost: int, timeout: int, income: float, category: str):
+    def __init__(self, name: str, image: pygame.Surface, cost: int,
+                 timeout: int, income: float, category: str,
+                 heat_generation: float = 0.0, max_heat: float = 5.0):
         self.name = name
         self.image = image
         self.cost = cost
@@ -16,19 +18,26 @@ class Content:
         self.creation = datetime.datetime.now()
         self.income = income
         self.category = category
+        # Heat properties
+        self.heat = 0.0
+        self.heat_generation = heat_generation  # units per second
+        self.max_heat = max_heat
 
     def clone(self):
         """
-        Create a fresh copy with new timestamp.
+        Create a fresh copy with new timestamp, preserving heat settings.
         """
-        return Content(
+        cloned = Content(
             name=self.name,
             image=self.image,
             cost=self.cost,
             timeout=self.timeout,
             income=self.income,
-            category=self.category
+            category=self.category,
+            heat_generation=self.heat_generation,
+            max_heat=self.max_heat
         )
+        return cloned
 
 
 def compile_image_list():
@@ -51,22 +60,33 @@ def load_images():
         except pygame.error:
             print(f"Failed to load {path}")
 
+
 def load_shop_contents():
-    contents=[]
+    contents = []
     with open('shop_objects.csv', newline='') as f:
         reader = csv.DictReader(f)
         for row in reader:
-            contents.append(Content(row['name'], image_dict.get(row['image']), int(row['cost']),int(row['timeout']), float(row['income']), 'shop_logo'))
+            img = image_dict.get(row['image'])
+            # parse new heat fields
+            gen = float(row.get('heat_generation', 0.0))
+            mh  = float(row.get('max_heat', 5.0))
+            contents.append(Content(
+                row['name'], img,
+                int(row['cost']), int(row['timeout']),
+                float(row['income']), row.get('category', 'shop_logo'),
+                heat_generation=gen,
+                max_heat=mh
+            ))
     return contents
 
 # --- Box and Grid Classes ---
 class Box:
     """
-    Cell in main grid with expiration bar.
+    Cell in main grid with expiration and heat bars.
     """
     def __init__(self, row, col, size, origin):
-        x = origin[0] + col*size
-        y = origin[1] + row*size
+        x = origin[0] + col * size
+        y = origin[1] + row * size
         self.rect = pygame.Rect(x, y, size, size)
         self.size = size
         self.occupied = False
@@ -75,23 +95,61 @@ class Box:
     def draw(self, surf):
         surf.blit(image_dict['reactor_slot_background'], self.rect)
         if self.content:
-            surf.blit(self.content.image, self.content.image.get_rect(center=self.rect.center))
+            # Draw content image
+            surf.blit(
+                self.content.image,
+                self.content.image.get_rect(center=self.rect.center)
+            )
+            # Heat bar at top
+            ratio_h = (
+                self.content.heat / self.content.max_heat
+                if self.content.max_heat > 0 else 0
+            )
+            hb_h = 4
+            hb_x = self.rect.x
+            hb_y = self.rect.y + 2
+            # Background of heat bar
+            pygame.draw.rect(
+                surf, (50, 50, 50),
+                (hb_x, hb_y, self.size, hb_h)
+            )
+            # Color from green to red
+            heat_color = (
+                int(255 * ratio_h),
+                int(255 * (1 - ratio_h)),
+                0
+            )
+            pygame.draw.rect(
+                surf, heat_color,
+                (hb_x, hb_y, int(self.size * ratio_h), hb_h)
+            )
+            # Expiration bar at bottom
             now = datetime.datetime.now()
             elapsed = (now - self.content.creation).total_seconds()
             remaining = max(0, self.content.timeout - elapsed)
-            ratio = remaining/self.content.timeout if self.content.timeout>0 else 0
+            ratio = (
+                remaining / self.content.timeout
+                if self.content.timeout > 0 else 0
+            )
             bar_h = 5
             bx, by = self.rect.x, self.rect.y + self.size - bar_h - 2
-            pygame.draw.rect(surf, (100,100,100), (bx,by,self.size,bar_h))
-            green, orange = (50,200,50),(255,165,0)
-            fill_color = (
-                int(orange[0] + (green[0]-orange[0])*ratio),
-                int(orange[1] + (green[1]-orange[1])*ratio),
-                int(orange[2] + (green[2]-orange[2])*ratio)
+            pygame.draw.rect(
+                surf, (100, 100, 100),
+                (bx, by, self.size, bar_h)
             )
-            pygame.draw.rect(surf, fill_color, (bx,by,int(self.size*ratio),bar_h))
+            green, orange = (50, 200, 50), (255, 165, 0)
+            fill_color = (
+                int(orange[0] + (green[0] - orange[0]) * ratio),
+                int(orange[1] + (green[1] - orange[1]) * ratio),
+                int(orange[2] + (green[2] - orange[2]) * ratio)
+            )
+            pygame.draw.rect(
+                surf, fill_color,
+                (bx, by, int(self.size * ratio), bar_h)
+            )
 
-    def is_hovered(self, pos): return self.rect.collidepoint(pos)
+    def is_hovered(self, pos):
+        return self.rect.collidepoint(pos)
 
     def place(self, content):
         if not self.occupied:
@@ -101,24 +159,29 @@ class Box:
         return False
 
     def remove(self):
-        self.occupied=False; self.content=None
-
+        self.occupied = False
+        self.content = None
 
 class Grid:
     """
     Main play grid.
     """
     def __init__(self, rows, cols, size, origin):
-        self.cells = [[Box(r,c,size,origin) for c in range(cols)] for r in range(rows)]
+        self.cells = [
+            [Box(r, c, size, origin) for c in range(cols)]
+            for r in range(rows)
+        ]
 
     def draw(self, surf):
         for row in self.cells:
-            for b in row: b.draw(surf)
+            for b in row:
+                b.draw(surf)
 
     def place(self, pos, content):
         for row in self.cells:
             for b in row:
-                if b.is_hovered(pos) and b.place(content): return True
+                if b.is_hovered(pos) and b.place(content):
+                    return True
         return False
 
 # --- Shop Classes ---
@@ -254,7 +317,20 @@ while running:
     for e in pygame.event.get():
         if e.type==pygame.QUIT: running=False
         elif e.type==INCOME:
+            # Heat generation, income, and expiration check
+            dt = 0.1  # timer interval in seconds
             for row in grid.cells:
+                for b in row:
+                    if b.content:
+                        # Generate income
+                        money += b.content.income
+                        # Generate heat
+                        b.content.heat = b.content.heat + b.content.heat_generation * dt
+                        elapsed = (now - b.content.creation).total_seconds()
+                        #if heat exceeds max, remove the object
+                        if b.content.heat > b.content.max_heat or elapsed >= b.content.timeout:
+                            b.remove()
+
                 for b in row:
                     if b.content:
                         money+=b.content.income

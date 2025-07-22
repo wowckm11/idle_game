@@ -1,6 +1,6 @@
-category,name,image,cost,timeout,income,heat_generation,max_heat
-shop_logo,uranium_rod,uranium_rod,10,15,0.1,1,5
-shop_logo,yellow_rod,yellow_rod,20,20,0.2,1,5
-shop_logo,red_rod,red_rod,50,25,0.5,1,5
-shop_logo,blue_rod,blue_rod,250,30,2.5,1,5
-systems_logo,blue_rod,blue_rod,250,0,0,0,5
+category,name,image,cost,timeout,income,heat_generation,max_heat,conductivity
+shop_logo,uranium_rod,uranium_rod,10,15,0.1,1,5,0
+shop_logo,yellow_rod,yellow_rod,20,20,0.2,1,5,0
+shop_logo,red_rod,red_rod,50,25,0.5,1,5,0
+shop_logo,blue_rod,blue_rod,250,30,2.5,1,5,0
+systems_logo,blue_rod,blue_rod,25,0,0,0,5,1

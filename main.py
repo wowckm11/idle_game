@@ -22,6 +22,10 @@ class Content:
         self.heat = 0.0
         self.heat_generation = heat_generation  # units per second
         self.max_heat = max_heat
+        if timeout == 0:
+            self.permanent = True
+        else:
+            self.permanent = False
 
     def clone(self):
         """
@@ -123,30 +127,43 @@ class Box:
                 surf, heat_color,
                 (hb_x, hb_y, int(self.size * ratio_h), hb_h)
             )
-            # Expiration bar at bottom
-            now = datetime.datetime.now()
-            elapsed = (now - self.content.creation).total_seconds()
-            remaining = max(0, self.content.timeout - elapsed)
-            ratio = (
-                remaining / self.content.timeout
-                if self.content.timeout > 0 else 0
-            )
-            bar_h = 5
-            bx, by = self.rect.x, self.rect.y + self.size - bar_h - 2
-            pygame.draw.rect(
-                surf, (100, 100, 100),
+            # Expiration bar at bottom (skip if permanent)
+            if not self.content.permanent:
+                now = datetime.datetime.now()
+                elapsed = (now - self.content.creation).total_seconds()
+                remaining = max(0, self.content.timeout - elapsed)
+                ratio = (
+                    remaining / self.content.timeout
+                    if self.content.timeout > 0 else 0
+                )
+                bar_h = 5
+                bx, by = self.rect.x, self.rect.y + self.size - bar_h - 2
+                pygame.draw.rect(
+                    surf, (100, 100, 100),
+                    (bx, by, self.size, bar_h)
+                )
+                green, orange = (50, 200, 50), (255, 165, 0)
+                fill_color = (
+                    int(orange[0] + (green[0] - orange[0]) * ratio),
+                    int(orange[1] + (green[1] - orange[1]) * ratio),
+                    int(orange[2] + (green[2] - orange[2]) * ratio)
+                )
+                pygame.draw.rect(
+                    surf, fill_color,
+                    (bx, by, int(self.size * ratio), bar_h)
+                ),
                 (bx, by, self.size, bar_h)
-            )
-            green, orange = (50, 200, 50), (255, 165, 0)
-            fill_color = (
-                int(orange[0] + (green[0] - orange[0]) * ratio),
-                int(orange[1] + (green[1] - orange[1]) * ratio),
-                int(orange[2] + (green[2] - orange[2]) * ratio)
-            )
-            pygame.draw.rect(
-                surf, fill_color,
-                (bx, by, int(self.size * ratio), bar_h)
-            )
+
+                green, orange = (50, 200, 50), (255, 165, 0)
+                fill_color = (
+                    int(orange[0] + (green[0] - orange[0]) * ratio),
+                    int(orange[1] + (green[1] - orange[1]) * ratio),
+                    int(orange[2] + (green[2] - orange[2]) * ratio)
+                )
+                pygame.draw.rect(
+                    surf, fill_color,
+                    (bx, by, int(self.size * ratio), bar_h)
+                )
 
     def is_hovered(self, pos):
         return self.rect.collidepoint(pos)
@@ -326,15 +343,13 @@ while running:
                         money += b.content.income
                         # Generate heat
                         b.content.heat = b.content.heat + b.content.heat_generation * dt
-                        elapsed = (now - b.content.creation).total_seconds()
+                        if not b.content.permanent: 
+                            elapsed = (now - b.content.creation).total_seconds()
+                            if elapsed >= b.content.timeout:
+                                b.remove()
+                                continue
                         #if heat exceeds max, remove the object
-                        if b.content.heat > b.content.max_heat or elapsed >= b.content.timeout:
-                            b.remove()
-
-                for b in row:
-                    if b.content:
-                        money+=b.content.income
-                        if (now-b.content.creation).total_seconds()>=b.content.timeout:
+                        if b.content.heat > b.content.max_heat:
                             b.remove()
         elif e.type==pygame.MOUSEBUTTONDOWN and e.button==1:
             pos=e.pos

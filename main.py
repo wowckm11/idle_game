@@ -2,6 +2,8 @@ import pygame
 import datetime
 import csv
 import os
+import numpy as np
+from scipy.signal import convolve2d
 
 # --- Content Class ---
 class Content:
@@ -10,7 +12,8 @@ class Content:
     """
     def __init__(self, name: str, image: pygame.Surface, cost: int,
                  timeout: int, income: float, category: str,
-                 heat_generation: float = 0.0, max_heat: float = 5.0):
+                 heat_generation: float = 0.0, max_heat: float = 5.0,
+                 conductivity: float = 0.0):
         self.name = name
         self.image = image
         self.cost = cost
@@ -22,16 +25,14 @@ class Content:
         self.heat = 0.0
         self.heat_generation = heat_generation  # units per second
         self.max_heat = max_heat
-        if timeout == 0:
-            self.permanent = True
-        else:
-            self.permanent = False
+        self.conductivity = conductivity  # heat transfer rate
+        self.permanent = (timeout == 0)
 
     def clone(self):
         """
         Create a fresh copy with new timestamp, preserving heat settings.
         """
-        cloned = Content(
+        return Content(
             name=self.name,
             image=self.image,
             cost=self.cost,
@@ -39,9 +40,9 @@ class Content:
             income=self.income,
             category=self.category,
             heat_generation=self.heat_generation,
-            max_heat=self.max_heat
+            max_heat=self.max_heat,
+            conductivity=self.conductivity
         )
-        return cloned
 
 
 def compile_image_list():
@@ -74,15 +75,16 @@ def load_shop_contents():
             # parse new heat fields
             gen = float(row.get('heat_generation', 0.0))
             mh  = float(row.get('max_heat', 5.0))
+            cond = float(row.get('conductivity', 0.0))
             contents.append(Content(
                 row['name'], img,
                 int(row['cost']), int(row['timeout']),
                 float(row['income']), row.get('category', 'shop_logo'),
                 heat_generation=gen,
-                max_heat=mh
+                max_heat=mh,
+                conductivity=cond
             ))
     return contents
-
 # --- Box and Grid Classes ---
 class Box:
     """
@@ -95,6 +97,9 @@ class Box:
         self.size = size
         self.occupied = False
         self.content = None
+        # Store grid coordinates for diffusion mapping
+        self.row = row
+        self.col = col
 
     def draw(self, surf):
         surf.blit(image_dict['reactor_slot_background'], self.rect)
@@ -172,10 +177,26 @@ class Box:
         if not self.occupied:
             self.occupied = True
             self.content = content.clone()
+            # Populate heat arrays
+            global H, G, M, C_arr
+            r, c = self.row, self.col
+            H[r, c] = 0.0
+            G[r, c] = self.content.heat_generation
+            M[r, c] = self.content.max_heat
+            C_arr[r, c] = self.content.conductivity
             return True
+        return False
         return False
 
     def remove(self):
+        # Clear heat arrays on removal
+        global H, G, M, C_arr
+        if self.content:
+            r, c = self.row, self.col
+            H[r, c] = 0.0
+            G[r, c] = 0.0
+            M[r, c] = 0.0
+            C_arr[r, c] = 0.0
         self.occupied = False
         self.content = None
 
@@ -326,7 +347,71 @@ all_items=load_shop_contents()
 cats=['shop_logo','systems_logo','upgrade_logo']
 panels={cat:Panel((20,100),50,[i for i in all_items if i.category==cat]) for cat in cats}
 tabbar=TabBar(cats,(20,20),font)
+# create grid
 grid=Grid(10,10,50,(450,50))
+# --- Heat arrays setup ---
+rows, cols = len(grid.cells), len(grid.cells[0])
+H = np.zeros((rows, cols), dtype=float)
+G = np.zeros((rows, cols), dtype=float)
+M = np.zeros((rows, cols), dtype=float)
+C_arr = np.zeros((rows, cols), dtype=float)  # conductivity array
+
+# Laplacian kernel for diffusion
+lap_kernel = np.array([[0,1,0], [1,-4,1], [0,1,0]], dtype=float)
+
+
+def update_heat_array(H, G, C_arr, M, dt):
+    # Create a copy of H for read-only purposes
+    H_old = H.copy()
+    
+    # Apply heat generation first
+    H[:] = H_old + G * dt
+    
+    # Create a change array to accumulate heat transfers
+    dH = np.zeros_like(H)
+    
+    # Apply diffusion using finite differences based on temperature
+    rows, cols = H.shape
+    for i in range(rows):
+        for j in range(cols):
+            # Skip empty cells (no heat capacity)
+            if M[i, j] <= 0:
+                continue
+                
+            # Calculate current temperature for this cell
+            temp_i = H[i, j] / M[i, j]
+            
+            # Check all 4 neighbors
+            for di, dj in [(0, 1), (1, 0), (0, -1), (-1, 0)]:
+                ni, nj = i + di, j + dj
+                if 0 <= ni < rows and 0 <= nj < cols:
+                    # Skip empty neighbors
+                    if M[ni, nj] <= 0:
+                        continue
+                    
+                    # Calculate neighbor temperature
+                    temp_j = H[ni, nj] / M[ni, nj]
+                    
+                    # Calculate heat transfer based on average conductivity and temp difference
+                    avg_conductivity = (C_arr[i, j] + C_arr[ni, nj]) / 2
+                    temp_diff = temp_i - temp_j
+                    heat_transfer = dt * avg_conductivity * temp_diff
+                    
+                    # Optional: Add a max heat transfer limit for stability
+                    max_transfer = 0.5
+                    heat_transfer = np.clip(heat_transfer, -max_transfer, max_transfer)
+                    
+                    # Apply transfer to neighbor
+                    dH[ni, nj] += heat_transfer
+                    # Apply opposite change to current cell
+                    dH[i, j] -= heat_transfer
+    
+    # Apply the accumulated heat changes
+    H += dH
+    
+    # Clamp values to valid range
+    np.clip(H, 0, M, out=H)
+
 # main loop
 running=True
 while running:
@@ -334,24 +419,34 @@ while running:
     for e in pygame.event.get():
         if e.type==pygame.QUIT: running=False
         elif e.type==INCOME:
-            # Heat generation, income, and expiration check
-            dt = 0.1  # timer interval in seconds
-            for row in grid.cells:
-                for b in row:
-                    if b.content:
-                        # Generate income
-                        money += b.content.income
-                        # Generate heat
-                        b.content.heat = b.content.heat + b.content.heat_generation * dt
-                        if not b.content.permanent: 
-                            elapsed = (now - b.content.creation).total_seconds()
-                            if elapsed >= b.content.timeout:
-                                b.remove()
-                                continue
-                        #if heat exceeds max, remove the object
-                        if b.content.heat > b.content.max_heat:
+            # Vectorized heat update
+            dt = 0.1  # seconds per tick
+            update_heat_array(H, G, C_arr, M, dt)
+            # Sync back to each box and handle income/expiration/overflow
+            now = datetime.datetime.now()
+            for r in range(rows):
+                for c in range(cols):
+                    b = grid.cells[r][c]
+                    if not b.content:
+                        continue
+                    # Sync heat value
+                    b.content.heat = H[r, c]
+                    # Accrue income
+                    money += b.content.income
+                    # Expire non-permanent items
+                    if not b.content.permanent:
+                        elapsed = (now - b.content.creation).total_seconds()
+                        if elapsed >= b.content.timeout:
                             b.remove()
-        elif e.type==pygame.MOUSEBUTTONDOWN and e.button==1:
+                            # clear arrays
+                            H[r, c] = G[r, c] = M[r, c] = C_arr[r, c] = 0.0
+                            continue
+                    # Remove on heat overflow
+                    if b.content.heat >= b.content.max_heat:
+                        b.remove()
+                        H[r, c] = G[r, c] = M[r, c] = C_arr[r, c] = 0.0
+                        continue
+        elif e.type==pygame.MOUSEBUTTONDOWN and e.button==1 and e.button==1:
             pos=e.pos
             if tabbar.handle_click(pos): continue
             panel=panels[tabbar.active]

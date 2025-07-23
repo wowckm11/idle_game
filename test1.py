@@ -9,7 +9,7 @@ HEAT_COLORS = [(int(255 * r), int(255 * (1 - r)), 0) for r in np.linspace(0, 1, 
 
 #config
 game_speed_actions_per_second=50
-diffusion_rate_factor_setting=2
+diffusion_rate_factor_setting=1
 return_percentage_on_sell = 1
 
 # --- Content Class ---
@@ -52,7 +52,7 @@ def compile_image_list():
     with open('shop_objects.csv', newline='') as f:
         reader = csv.DictReader(f)
         for row in reader:
-            image_list.append((f'assets/{row["image"]}.png', row['name']))
+            image_list.append((f'assets/{row["name"]}.png', row['name']))
     return image_list
 
 def load_images():
@@ -69,7 +69,7 @@ def load_shop_contents():
     with open('shop_objects.csv', newline='') as f:
         reader = csv.DictReader(f)
         for row in reader:
-            img = image_dict.get(row['image'])
+            img = image_dict.get(row['name'])
             gen = float(row.get('heat_generation', 0.0))
             mh  = float(row.get('max_heat', 5.0))
             cond = float(row.get('conductivity', 0.0))

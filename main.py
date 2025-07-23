@@ -7,7 +7,7 @@ import numpy as np
 HEAT_COLORS = [(int(255 * r), int(255 * (1 - r)), 0) for r in np.linspace(0, 1, 256)]
 
 #config
-game_speed_actions_per_second=20
+game_speed_actions_per_second=5
 
 # --- Content Class ---
 class Content:
@@ -243,22 +243,41 @@ def update_heat_array(H, G, C_arr, M, dt):
     # Apply diffusion
     for i in range(rows):
         for j in range(cols):
-            if M[i, j] <= 0:
-                continue
-                
-            temp_i = H[i, j] / M[i, j]
-            
-            for di, dj in [(0, 1), (1, 0), (0, -1), (-1, 0)]:
-                ni, nj = i + di, j + dj
-                if 0 <= ni < rows and 0 <= nj < cols and M[ni, nj] > 0:
-                    temp_j = H[ni, nj] / M[ni, nj]
-                    avg_cond = C_arr[i, j]
-                    temp_diff = temp_i - temp_j
-                    heat_transfer = dt * avg_cond * temp_diff
-
+            if (i % 2 and j % 2) or (not i % 2 and not j % 2):
+                print(f'{i},{j}')
+                if M[i, j] <= 0:
+                    continue
                     
-                    dH[i, j] -= heat_transfer
-                    dH[ni, nj] += heat_transfer
+                temp_i = H[i, j] / M[i, j]
+                
+                for di, dj in [(0, 1), (1, 0), (0, -1), (-1, 0)]:
+                    ni, nj = i + di, j + dj
+                    if 0 <= ni < rows and 0 <= nj < cols and M[ni, nj] > 0:
+                        temp_j = (H[i, j]+H[ni, nj]) / (M[ni, nj]+M[i, j])
+                        avg_cond = (C_arr[i, j] + C_arr[ni, nj])/2
+                        temp_diff = temp_i - temp_j
+                        if temp_diff > 0:
+                            temp_diff = (temp_diff + 2)/3
+                            heat_transfer = dt * avg_cond * temp_diff
+                            average_capacity = (M[ni, nj]+M[i, j])/2
+                            tick_to_max=0.2/game_speed_actions_per_second
+                            if heat_transfer > H[i, j]:
+                                heat_transfer = H[i, j]
+                            if heat_transfer > tick_to_max*average_capacity:
+                                heat_transfer = tick_to_max*average_capacity
+                        elif temp_diff == 0:
+                            continue
+                        else: 
+                            temp_diff = (temp_diff - 2)/3
+                            heat_transfer = dt * avg_cond * temp_diff
+                            average_capacity = (M[ni, nj]+M[i, j])/2
+                            tick_to_max=0.1/game_speed_actions_per_second
+                            if heat_transfer > H[ni, nj]:
+                                heat_transfer = H[ni, nj]
+                            if heat_transfer < -tick_to_max*average_capacity:
+                                heat_transfer = -tick_to_max*average_capacity
+                        dH[i, j] -= heat_transfer
+                        dH[ni, nj] += heat_transfer
     
     # Apply generation and diffusion
     H += G * dt + dH

@@ -2,13 +2,15 @@ import pygame
 import csv
 import os
 import numpy as np
+from scipy.ndimage import label
 
 # Pre-calculate heat colors
 HEAT_COLORS = [(int(255 * r), int(255 * (1 - r)), 0) for r in np.linspace(0, 1, 256)]
 
 #config
-game_speed_actions_per_second=1
-game_speed = 1000//game_speed_actions_per_second #number of miliseconds per action 50 => happens 20 times a second
+game_speed_actions_per_second=50
+diffusion_rate_factor_setting=2
+return_percentage_on_sell = 1
 
 # --- Content Class ---
 class Content:
@@ -19,7 +21,7 @@ class Content:
         self.name = name
         self.image = image
         self.cost = cost
-        self.timeout = timeout/game_speed_actions_per_second
+        self.timeout = timeout
         self.creation = pygame.time.get_ticks()
         self.income = income
         self.category = category
@@ -35,7 +37,7 @@ class Content:
             image=self.image,
             cost=self.cost,
             timeout=self.timeout,
-            income=self.income,
+            income=self.income/game_speed_actions_per_second,
             category=self.category,
             heat_generation=self.heat_generation,
             max_heat=self.max_heat,
@@ -98,14 +100,14 @@ class Box:
         if self.content:
             # Draw content image
             surf.blit(self.content.image, self.content.image.get_rect(center=self.rect.center))
-            
+
             # Heat bar
             if not self.content.max_heat == 0:
                 ratio_h = min(1.0, max(0.0, self.content.heat / self.content.max_heat))
                 pygame.draw.rect(surf, (50, 50, 50), (self.rect.x, self.rect.y+2, self.size, 4))
-                pygame.draw.rect(surf, HEAT_COLORS[int(ratio_h * 255)], 
-                                (self.rect.x, self.rect.y+2, int(self.size * ratio_h), 4))
-            
+                pygame.draw.rect(surf, HEAT_COLORS[int(ratio_h * 255)],
+                                 (self.rect.x, self.rect.y+2, int(self.size * ratio_h), 4))
+
             # Expiration bar
             if not self.content.permanent:
                 elapsed = (pygame.time.get_ticks() - self.content.creation)/1000
@@ -113,7 +115,7 @@ class Box:
                 ratio = remaining / self.content.timeout
                 bar_rect = (self.rect.x, self.rect.y + self.size - 7, self.size, 5)
                 pygame.draw.rect(surf, (100, 100, 100), bar_rect)
-                
+
                 # Interpolate color
                 r = min(1.0, ratio)
                 fill_color = (
@@ -121,8 +123,8 @@ class Box:
                     int(165 * (1 - r) + 200 * r),
                     int(0 * (1 - r) + 50 * r)
                 )
-                pygame.draw.rect(surf, fill_color, 
-                                (bar_rect[0], bar_rect[1], int(bar_rect[2] * ratio), bar_rect[3]))
+                pygame.draw.rect(surf, fill_color,
+                                 (bar_rect[0], bar_rect[1], int(bar_rect[2] * ratio), bar_rect[3]))
 
     def is_hovered(self, pos):
         return self.rect.collidepoint(pos)
@@ -146,8 +148,16 @@ class Box:
         self.occupied = False
         self.content = None
 
+    def cash_return(self):
+        if self.content:
+            return self.content.cost
+
 class Grid:
     def __init__(self, rows, cols, size, origin):
+        self.rows = rows # Store rows for bounds checking
+        self.cols = cols # Store cols for bounds checking
+        self.cell_size = size # Store cell size for calculations
+        self.origin = origin # Store origin for calculations
         self.cells = [[Box(r, c, size, origin) for c in range(cols)] for r in range(rows)]
         self.flat_cells = [cell for row in self.cells for cell in row]
 
@@ -160,6 +170,26 @@ class Grid:
             if cell.is_hovered(pos) and cell.place(content):
                 return True
         return False
+
+    def get_cell_at_pos(self, pos):
+        """
+        Returns the Box (cell) at the given mouse position, or None if no cell is at that position.
+        """
+        mouse_x, mouse_y = pos
+        origin_x, origin_y = self.origin
+
+        # Adjust mouse position relative to the grid's origin
+        relative_x = mouse_x - origin_x
+        relative_y = mouse_y - origin_y
+
+        # Calculate which column and row the adjusted mouse position falls into
+        col = relative_x // self.cell_size
+        row = relative_y // self.cell_size
+
+        # Check if the calculated row and column are within the grid bounds
+        if 0 <= row < self.rows and 0 <= col < self.cols:
+            return self.cells[int(row)][int(col)] # Ensure row/col are integers for indexing
+        return None
 
 # --- Shop Classes ---
 class ShopBox:
@@ -237,48 +267,148 @@ class TabBar:
         return False
 
 def update_heat_array(H, G, C_arr, M, dt):
-    # Create a change array for heat transfers
-    dH = np.zeros_like(H)
+    """
+    Updates the heat distribution in a 2D grid based on heat generation/loss,
+    heat transfer between adjacent cells, and cooling systems.
+
+    Parameters:
+    H (np.array): 2D numpy array representing the current heat content of each cell.
+    G (np.array): 2D numpy array representing the heat generation/loss rate for each cell.
+                  Positive values generate heat, negative values remove heat.
+    C_arr (np.array): 2D numpy array representing the conductivity of each cell.
+                      Used to determine heat transfer rates between cells.
+    M (np.array): 2D numpy array representing the heat capacity of each cell.
+                  Also acts as a maximum heat content for clamping.
+    dt (float): Time step for the simulation.
+
+    Returns:
+    np.array: The updated heat content array H after one time step.
+    """
+
+    # Apply heat generation/loss first
+    # H is modified in-place
+    H += G * dt
+
+    # Create a temperature matrix (heat per capacity)
+    # Cells with M <= 0 will have T = 0 to avoid division by zero.
+    T = np.divide(H, M, out=np.zeros_like(H, dtype=float), where=M > 0)
+
+    # Initialize a delta heat array to accumulate changes for this timestep.
+    # This is crucial for ensuring all heat transfer calculations for the current
+    # timestep are based on the temperatures at the *beginning* of the timestep.
+    # Changes are applied simultaneously at the end of the heat transfer loop.
+    dH = np.zeros_like(H, dtype=float)
+
     rows, cols = H.shape
-    
-    # Apply diffusion
-    for i in range(rows):
-        for j in range(cols):
-            if M[i, j] <= 0:
+
+    # Define 4-connected neighbors for heat transfer.
+    # Heat typically flows between directly adjacent cells.
+    neighbors_coords = [(0, 1), (1, 0), (0, -1), (-1, 0)] # Right, Down, Left, Up
+
+    # Create a connectivity matrix (cells that can exchange heat).
+    # Cells are considered connected if their conductivity (C_arr) is greater than 0.
+    connectivity = (C_arr > 0).astype(int)
+
+    # Identify connected components using scipy.ndimage.label.
+    # This groups cells that can potentially exchange heat into distinct components.
+    # The structure parameter defines 8-connectedness for component labeling.
+    structure = np.ones((3, 3), dtype=int) # 8-connected for component identification
+    labeled, num_features = label(connectivity, structure=structure)
+
+    # --- Heat Transfer by Edges (Local Diffusion) ---
+    # Iterate over each cell in the grid to calculate heat flow to its neighbors
+    for r in range(rows):
+        for c in range(cols):
+            # Only consider cells that have heat capacity and can conduct heat.
+            # Cells with M <= 0 or C_arr <= 0 cannot participate in heat transfer.
+            if M[r, c] <= 0 or C_arr[r, c] <= 0:
                 continue
-                
-            temp_i = H[i, j] / M[i, j]
+
+            current_temp = T[r, c]
+            current_conductivity = C_arr[r, c]
             
-            for di, dj in [(0, 1), (1, 0), (0, -1), (-1, 0)]:
-                ni, nj = i + di, j + dj
-                if 0 <= ni < rows and 0 <= nj < cols and M[ni, nj] > 0:
-                    temp_j = H[ni, nj] / M[ni, nj]
-                    avg_cond = C_arr[i, j]
-                    temp_diff = temp_i - temp_j
-                    heat_transfer = dt * avg_cond * temp_diff
-                    
-                    # Stability limit
-                    max_transfer = 0.02 * min(M[i, j], M[ni, nj])
-                    heat_transfer = np.clip(heat_transfer, -max_transfer, max_transfer)
-                    
-                    dH[i, j] -= heat_transfer
-                    dH[ni, nj] += heat_transfer
+            # Iterate over 4-connected neighbors
+            for dr, dc in neighbors_coords:
+                nr, nc = r + dr, c + dc
+
+                # Check if neighbor is within grid bounds
+                if 0 <= nr < rows and 0 <= nc < cols:
+                    # Check if the neighbor also has heat capacity and can conduct heat
+                    if M[nr, nc] > 0 and C_arr[nr, nc] > 0:
+                        # Ensure both cells are part of the *same* connected component.
+                        # Heat should not flow between cells in different isolated components.
+                        # labeled[r,c] == 0 means the cell has no conductivity and is not part of any component.
+                        if labeled[r, c] != 0 and labeled[r, c] == labeled[nr, nc]:
+                            neighbor_temp = T[nr, nc]
+                            neighbor_conductivity = C_arr[nr, nc]
+
+                            # Calculate effective conductivity between the two cells.
+                            # The heat flow is limited by the less conductive of the two cells,
+                            # acting as a bottleneck.
+                            effective_conductivity = (current_conductivity+neighbor_conductivity)/2
+
+                            # Calculate temperature difference.
+                            # Heat flows from the hotter cell to the colder cell.
+                            # If current_temp > neighbor_temp, heat flows from (r,c) to (nr,nc).
+                            temp_diff = current_temp - neighbor_temp
+
+                            # Define a diffusion rate factor. This can be tuned for stability
+                            # and the speed of diffusion. It's similar to the '0.2' factor
+                            # from your original code's max_temp_change.
+                            diffusion_rate_factor = diffusion_rate_factor_setting # Tune this value as needed
+
+                            # Calculate the amount of heat flowing from (r,c) to (nr,nc)
+                            # This is a simplified form of Fourier's Law.
+                            heat_flow = effective_conductivity * temp_diff * dt * diffusion_rate_factor
+
+                            # Accumulate heat changes in the dH array.
+                            # The current cell (r,c) loses heat, the neighbor (nr,nc) gains heat.
+                            dH[r, c] -= heat_flow
+                            dH[nr, nc] += heat_flow
     
-    # Apply generation and diffusion
-    H += G * dt + dH
+    # Apply all accumulated heat changes simultaneously to the H array.
+    H += dH
+
+    # --- Apply Cooling Systems ---
+    # This section handles specific cooling cells (where G < 0 and M == 0).
+    # These cells themselves have no heat capacity but act as heat sinks for neighbors.
+    cooling_mask = (G < 0) & (M == 0)
+    cooling_cells = np.argwhere(cooling_mask)
+
+    for i, j in cooling_cells:
+        # Calculate the total cooling power from this specific cooling cell.
+        cooling_power = -G[i, j] * dt # G[i,j] is negative, so -G[i,j] is positive power
+        
+        neighbors_to_cool = []
+        # Find all valid 4-connected neighbors that have heat capacity (M > 0)
+        for di, dj in neighbors_coords:
+            ni, nj = i + di, j + dj
+            if 0 <= ni < rows and 0 <= nj < cols and M[ni, nj] > 0:
+                neighbors_to_cool.append((ni, nj))
+        
+        # Distribute the cooling power among the coolable neighbors.
+        if neighbors_to_cool:
+            # Calculate the total heat of only the neighbors that can be cooled.
+            total_heat_of_coolable_neighbors = sum(H[n] for n in neighbors_to_cool)
+            
+            # Only cool if there's heat to remove from neighbors.
+            if total_heat_of_coolable_neighbors > 0:
+                for ni, nj in neighbors_to_cool:
+                    # Proportionally cool based on the neighbor's current heat content.
+                    proportion = H[ni, nj] / total_heat_of_coolable_neighbors
+                    cool_amount = cooling_power * proportion
+
+                    # Ensure heat content does not drop below zero.
+                    H[ni, nj] = max(0, H[ni, nj] - cool_amount)
     
-    # Apply cooling systems
-    for i in range(rows):
-        for j in range(cols):
-            if G[i, j] < 0 and M[i, j] == 0:
-                cooling_power = -G[i, j] * dt
-                for di, dj in [(0, 1), (1, 0), (0, -1), (-1, 0)]:
-                    ni, nj = i + di, j + dj
-                    if 0 <= ni < rows and 0 <= nj < cols and M[ni, nj] > 0:
-                        H[ni, nj] = max(0, H[ni, nj] - cooling_power)
-    
-    # Clamp values
+    # --- Final Clamping ---
+    # Clamp heat values to a valid range:
+    # - Ensure heat content is non-negative.
+    # - Ensure heat content does not exceed the cell's maximum capacity (M).
+    #   (Assuming M also represents the maximum allowable heat content).
     np.clip(H, 0, M, out=H)
+
+    return H
 
 # Initialize Pygame
 pygame.init()
@@ -292,7 +422,7 @@ money = 500000.0
 # Timers
 
 INCOME = pygame.USEREVENT + 1
-pygame.time.set_timer(INCOME, game_speed)
+pygame.time.set_timer(INCOME, 1000//game_speed_actions_per_second)
 
 # Load items and panels
 all_items = load_shop_contents()
@@ -316,7 +446,7 @@ last_time = pygame.time.get_ticks()
 
 while running:
     current_time = pygame.time.get_ticks()
-    dt = (current_time - last_time)/game_speed
+    dt = (current_time - last_time)/game_speed_actions_per_second
     last_time = current_time   
     
     for e in pygame.event.get():
@@ -359,7 +489,13 @@ while running:
             if active and money >= active.cost:
                 if grid.place(pos, active): 
                     money -= active.cost
-    
+        elif e.type == pygame.MOUSEBUTTONDOWN and e.button == 3:  
+            pos = e.pos
+            # Find the cell at the mouse position and remove its content
+            cell_clicked = grid.get_cell_at_pos(pos)
+            if cell_clicked and cell_clicked.content:
+                money += cell_clicked.cash_return()*return_percentage_on_sell
+                cell_clicked.remove() # This should now remove the content of the clicked cell
     # Rendering
     screen.fill((30, 30, 30))
     grid.draw(screen)
